@@ -1,0 +1,2 @@
+/ai/models/forehead_skin_type_best.pt filter=lfs diff=lfs merge=lfs -text
+/ai/models/left_cheek_skin_type_best.pt filter=lfs diff=lfs merge=lfs -text
