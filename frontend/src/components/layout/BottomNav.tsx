@@ -1,61 +1,80 @@
-// src/components/layout/BottomNav.tsx
 "use client";
 
-import { Search, Sparkles, Heart, User, Home } from "lucide-react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
+import { Home, Search, Sparkles, Heart, User } from "lucide-react";
 
-const NAV_ITEMS = [
-  { href: "/search",  icon: Search,   label: "검색"   },
-  { href: "/routine", icon: Sparkles, label: "루틴"   },
-  { href: "/home",    icon: Home,     label: "홈",  center: true },
-  { href: "/likes",   icon: Heart,    label: "좋아요" },
-  { href: "/mypage",  icon: User,     label: "마이"   },
-];
+// 홈을 중간(index 2)에 배치한 탭 순서
+const TABS = [
+  { id: "search",    href: "/search",    icon: Search},
+  { id: "recommend", href: "/recommend", icon: Sparkles},
+  { id: "home",      href: "/home",      icon: Home},
+  { id: "likes",     href: "/likes",     icon: Heart },
+  { id: "mypage",    href: "/mypage",    icon: User},
+] as const;
 
 export default function BottomNav() {
+  const router   = useRouter();
   const pathname = usePathname();
 
+  const getActiveTab = (): string => {
+    if (pathname.startsWith("/search"))    return "search";
+    if (pathname.startsWith("/recommend")) return "recommend";
+    if (pathname.startsWith("/likes"))     return "likes";
+    if (pathname.startsWith("/mypage"))    return "mypage";
+    return "home";
+  };
+  const activeTab = getActiveTab();
+
   return (
-    <nav className="
-      sticky bottom-0
-      h-nav w-full
-      bg-bg-card border-t border-bg-surface
-      shadow-nav
-      flex items-center justify-around
-      px-2
-      pb-safe-b
-    ">
-      {NAV_ITEMS.map(({ href, icon: Icon, label, center }) => {
-        const isActive = pathname === href;
+    <nav className="fixed bottom-0 left-0 right-0 z-50 flex justify-center">
+      <div className="bottom-nav-container">
+        {TABS.map((tab) => {
+          const isActive = activeTab === tab.id;
+          const isHome = tab.id === "home";
+          const Icon = tab.icon;
 
-        // 홈 버튼 — 피그마의 검정 원형 버튼
-        if (center) {
+          // 홈 버튼 — 원형, 중앙 배치
+          if (isHome) {
+            return (
+              <button
+                key={tab.id}
+                onClick={() => router.push(tab.href)}
+                className="bottom-nav-button"
+              >
+                <div className="bottom-nav-home-circle" data-active={isActive}>
+                  <Icon
+                    size={22}
+                    strokeWidth={isActive ? 2 : 1.6}
+                    className="bottom-nav-home-icon"
+                    data-active={isActive}
+                  />
+                </div>
+              </button>
+            );
+          }
+
+          // 일반 탭 버튼
           return (
-            <Link key={href} href={href} className="flex flex-col items-center -mt-5">
-              <span className={`
-                w-14 h-14 rounded-full flex items-center justify-center shadow-modal
-                transition-colors
-                ${isActive ? "bg-brand" : "bg-text-primary"}
-              `}>
-                <Icon size={24} className="text-white" />
-              </span>
-            </Link>
+            <button
+              key={tab.id}
+              onClick={() => router.push(tab.href)}
+              className="bottom-nav-button"
+            >
+              <Icon
+                size={20}
+                strokeWidth={isActive ? 2 : 1.4}
+                className="bottom-nav-icon"
+                data-active={isActive}
+                style={{
+                  fill: tab.id === "likes" && isActive ? "currentColor" : "none",
+                }}
+              />
+              {/* 활성 표시 — 하단 선 */}
+              {isActive && <div className="bottom-nav-indicator" />}
+            </button>
           );
-        }
-
-        return (
-          <Link key={href} href={href} className="flex flex-col items-center gap-1 py-1 px-3">
-            <Icon
-              size={22}
-              className={`transition-colors ${isActive ? "text-brand" : "text-text-muted"}`}
-            />
-            <span className={`text-2xs transition-colors ${isActive ? "text-brand font-medium" : "text-text-muted"}`}>
-              {label}
-            </span>
-          </Link>
-        );
-      })}
+        })}
+      </div>
     </nav>
   );
 }

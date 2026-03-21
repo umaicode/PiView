@@ -47,6 +47,22 @@
 - 구조 변경이나 공통 예외 처리 리팩터링이 필요하면 기존 계약을 유지하는 범위에서 신중히 진행한다.
 - 기존 구현을 수정할 때는 주변 코드와 계약을 우선 맞추고, 대규모 구조 변경은 사용자 요청이나 명확한 필요가 있을 때만 진행한다.
 
+### Swagger / OpenAPI 작업 규약
+
+- Swagger 작업 시 먼저 아래 파일을 확인한다.
+    - `src/main/java/com/piview/backend/global/config/SwaggerConfig.java`
+    - `src/main/java/com/piview/backend/global/config/SecurityConfig.java`
+    - `src/main/java/com/piview/backend/global/config/WebMvcConfig.java`
+- 이 프로젝트의 API 기본 prefix는 `/api/v1` 이다.
+- Controller에는 필요하면 아래 어노테이션을 사용한다.
+    - `@Tag`: 컨트롤러 그룹 설명
+    - `@Operation`: API 설명
+    - `@Parameter`: 파라미터 설명
+    - `@ApiResponses`, `@ApiResponse`: 응답 코드 설명
+- DTO에는 필요하면 `@Schema`를 사용한다.
+- Swagger 작업만으로 비즈니스 로직, 응답 형식, 보안 설정은 바꾸지 않는다.
+- 이 프로젝트의 공통 응답 규약은 `ApiResponse.success(...)` 이므로 Swagger 설명도 그 규약에 맞춘다.
+
 ## 스킬 메모
 
 - 백엔드(Java/Spring) 작업 시 공통 API 응답 및 예외 처리 규약 외의 일반적인 구현, 설계, 구조화 작업에서는 아래 스킬을 우선 참고한다.
