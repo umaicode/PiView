@@ -5,7 +5,13 @@ torch
 torchvision
 pillow
 easyocr
-opencv-python
+opencv-python-headless
 google-genai
 pydantic
 python-dotenv
+mediapipe
+httpx
+numpy
+chromadb
+pymysql
+redis

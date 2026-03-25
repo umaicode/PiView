@@ -1,16 +1,39 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
-import { WELCOME_SLIDES } from "@/constants/_mock/welcomeSlides";
-import { useUserStore } from "@/stores";
-import { authService } from "@/services/auth";
+import Image from "next/image";
+// 웰컴 슬라이드 데이터 (welcome 페이지 전용)
+interface WelcomeSlide {
+  image: string;
+  title: string;
+  subtitle: string;
+}
+
+const WELCOME_SLIDES: WelcomeSlide[] = [
+  {
+    image:
+      "https://images.unsplash.com/photo-1620916566398-39f1143ab7be?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080",
+    title: "Discover\nYour Glow",
+    subtitle: "당신의 피부에 맞는 특별한 케어를\n지금 시작하세요.",
+  },
+  {
+    image:
+      "https://images.unsplash.com/photo-1666025062728-c33a25e8ee3f?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080",
+    title: "Personalized\nFor You",
+    subtitle: "과학적 분석으로 나만의\n스킨케어 루틴을 설계합니다.",
+  },
+  {
+    image:
+      "https://images.unsplash.com/photo-1765964492963-b0aa8c172431?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080",
+    title: "Care &\nAttention",
+    subtitle: "AI 기반 피부 진단과 성분 분석으로\n정확한 맞춤 추천을 경험하세요.",
+  },
+];
 
 const GRADIENT_OVERLAY =
   "linear-gradient(to top, rgba(30,27,36,0.92) 0%, rgba(30,27,36,0.5) 40%, rgba(30,27,36,0.1) 65%, transparent 100%)";
 
 export default function WelcomePage() {
-  const router = useRouter();
   const [currentSlide, setCurrentSlide] = useState(0);
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
@@ -65,41 +88,6 @@ export default function WelcomePage() {
     window.location.href = `${process.env.NEXT_PUBLIC_API_URL}/oauth2/authorization/kakao?redirect_uri=${encodeURIComponent(redirectUri)}`;
   };
 
-  /**
-   * 관리자 로그인 (개발/테스트 전용)
-   * 백엔드 개발용 API를 호출하여 실제 Access Token 발급
-   */
-  const handleAdminLogin = async () => {
-    try {
-      // 개발용 API 호출 - Access Token 발급
-      const accessToken = await authService.devLogin("admin@test.com");
-
-      // 받은 토큰을 Zustand store에 저장
-      useUserStore.getState().setAccessToken(accessToken);
-
-      // 마이페이지로 이동
-      // useUserQuery가 /users/me를 호출하여 실제 사용자 정보를 가져옴
-      router.push("/mypage");
-    } catch (error) {
-      console.error("개발용 로그인 실패:", error);
-      // 실패 시 fallback으로 로컬 스토어에만 설정 (기존 방식)
-      useUserStore.getState().setUser({
-        id: 999999,
-        provider: "test",
-        providerId: "test-admin",
-        email: "admin@test.com",
-        name: "User",
-        imageUrl: null,
-        gender: "women",
-        ageGroup: null,
-        mySkinType: null,
-        exist: true,
-        mySkinProblems: [],
-      });
-      router.push("/mypage");
-    }
-  };
-
   const slide = WELCOME_SLIDES[currentSlide];
 
   return (
@@ -117,10 +105,12 @@ export default function WelcomePage() {
             opacity: index === currentSlide ? 1 : 0,
           }}
         >
-          <img
+          <Image
             src={slideItem.image}
             alt=""
-            className="absolute inset-0 w-full h-full object-cover object-[center_30%]"
+            fill
+            className="object-cover object-[center_30%]"
+            priority={index === 0}
           />
         </div>
       ))}
@@ -144,7 +134,7 @@ export default function WelcomePage() {
       <div className="flex-1" />
 
       {/* Bottom content area */}
-      <div className="relative z-10 px-7 pb-10">
+      <div className="relative z-10 px-7 pb-20">
         {/* Slide content */}
         <div className="min-h-[140px]">
           <h1
@@ -229,31 +219,6 @@ export default function WelcomePage() {
             <path d="M12 3C6.477 3 2 6.477 2 11c0 2.897 1.553 5.453 3.926 7.07L4.9 21.5a.5.5 0 0 0 .7.55l4.13-2.32A11.3 11.3 0 0 0 12 20c5.523 0 10-3.477 10-8S17.523 3 12 3z" />
           </svg>
           카카오로 시작하기
-        </button>
-
-        <div className="flex items-center gap-3 my-5">
-          <div className="flex-1 h-px bg-[#D0C8B8]" />
-          <span className="text-[13px] text-[#9E9585] font-normal">또는</span>
-          <div className="flex-1 h-px bg-[#D0C8B8]" />
-        </div>
-
-        <button
-          onClick={handleAdminLogin}
-          className="w-full h-[54px] bg-[#E5DFD3] text-[#5A5248] text-base font-semibold flex items-center justify-center gap-3 cursor-pointer border-none rounded-2xl"
-        >
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="#5A5248"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-          </svg>
-          관리자로 바로 시작
         </button>
 
         <p className="text-xs text-[#9E9585] text-center mt-5 leading-[1.6]">

@@ -1,99 +1,207 @@
 "use client";
 
-// ── 스타일 상수 ──────────────────────────────────────────────────────
-const SEARCH_INPUT_PADDING_CLEAR = 36;
-const SEARCH_INPUT_PADDING_DEFAULT = 12;
-const MODAL_CATEGORY_CHIP_BASE = {
-  height: "32px",
-  padding: "0 14px",
-  borderRadius: "20px",
-  fontSize: "13px",
-  cursor: "pointer",
-  border: "none",
-  whiteSpace: "nowrap" as const,
-};
-const MODAL_ACTION_ICON_BTN = {
-  width: "36px",
-  height: "36px",
-  borderRadius: "50%",
-  border: "1px solid var(--color-border-warm)",
-  backgroundColor: "white",
-  cursor: "pointer",
-};
-// 스텝별 카테고리 필터 칩 — SR(세럼/에센스), LT(로션/에멀전)는 카테고리 단일이라 칩 없음
-const STEP_CATEGORY_CHIPS: Record<string, string[]> = {
-  CL: ["폼", "오일", "밤", "젤", "워터", "로션"],
-  PR: ["토너", "미스트", "패드"],
-  SR: [],
-  LT: [],
-  CR: ["크림", "오일", "아이크림"],
-  SC: ["스틱", "스프레이"],
-};
-
-import { useState, useMemo } from "react";
-import { X, Search, Package, Heart, GitCompare } from "lucide-react";
-import {
-  SKIN_FUNCTION_COLORS,
-  SKIN_TYPE_TAG_COLORS,
-} from "@/constants/categoryColors";
-import { MYPAGE_ROUTINE_STEPS, ROUTINE_STEPS } from "@/constants/routineSteps";
-import { STEP_PRODUCTS } from "@/constants/_mock/mypageProducts";
-import type { LocalProduct } from "@/stores";
+import { useState } from "react";
+import { X, Search, Package, Loader2, Star } from "lucide-react";
+import ProductCard from "@/components/common/ProductCard";
+import { useMutation } from "@tanstack/react-query";
+import { getRoutineSteps } from "@/constants/routineSteps";
+import { useProductSearch, useProductFilters, useLike } from "@/hooks";
+import { useCompare } from "@/hooks/useCompare";
+import { useUserStore, selectGender, selectSkinType } from "@/stores";
+import { getCategoryDisplayName } from "@/utils/format";
+import { toSkinTypeEnum } from "@/utils/enumConvert";
+import { mapRecommendResponse } from "@/utils/productMapper";
+import type { MappedProduct } from "@/utils/productMapper";
+import { productService } from "@/services/product";
+import type { RecommendResponseDto } from "@/types/product";
+import type { SkinType } from "@/types/user";
 
 interface RoutineAddModalProps {
+  /** 현재 열린 스텝 코드 (CL, PR, SR ...) */
   openStep: string;
-  routine: Record<string, LocalProduct[]>;
+  /** 현재 draft에 담긴 productId 목록 — 중복 추가 방지용 */
+  draftProductIds: number[];
+  /** columnId — POST /api/v1/routines/draft 요청에 사용 */
+  columnId: number;
   onClose: () => void;
-  onAdd: (product: LocalProduct) => void;
+  /** 선택된 제품의 productId를 전달 — page.tsx에서 draft API 호출 */
+  onAdd: (productId: number) => void;
 }
 
 export default function RoutineAddModal({
   openStep,
-  routine,
+  draftProductIds,
+  columnId,
   onClose,
   onAdd,
 }: RoutineAddModalProps) {
-  const [addSearch, setAddSearch] = useState("");
-  const [isPiview, setIsPiview] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(
+    null,
+  );
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 7;
 
-  const currentLabel =
-    MYPAGE_ROUTINE_STEPS.find((step) => step.code === openStep)?.label ?? "";
+  // 피뷰추천 활성화 여부
+  const [isRecommendMode, setIsRecommendMode] = useState(false);
+  // 추천 API 전체 응답 — 카테고리명 키 기반 (예: { "클렌징폼": [...], "클렌징밤": [...] })
+  const [recommendedData, setRecommendedData] = useState<
+    Record<string, RecommendResponseDto[]>
+  >({});
+  // 추천 제품 ID 집합 — PICK 배지 표시 O(1) 조회용
+  const [recommendedProductIdSet, setRecommendedProductIdSet] = useState<
+    Set<number>
+  >(new Set());
 
-  // 스텝에 해당하는 카테고리 제품 필터링
-  const modalProducts = useMemo(() => {
-    const cats =
-      ROUTINE_STEPS.find((step) => step.code === openStep)?.categories ?? [];
-    return STEP_PRODUCTS.filter((product) =>
-      cats.some(
-        (category) =>
-          product.category === category || product.category.includes(category),
-      ),
-    );
-  }, [openStep]);
+  // 좋아요 API 연동 — toggleLike만 사용 (likeList는 ProductCard 내부에서 처리)
+  const { toggleLike } = useLike();
+  // 비교하기 상태 관리
+  const { compareItems, toggleCompare } = useCompare<MappedProduct>();
 
-  // 선택된 카테고리 칩으로 필터링
-  const categoryFilteredProducts = useMemo(() => {
-    if (!selectedCategory) return modalProducts;
-    return modalProducts.filter((product) =>
-      product.category.includes(selectedCategory),
-    );
-  }, [modalProducts, selectedCategory]);
+  // 성별에 따른 루틴 스텝 가져오기
+  const currentGender = useUserStore(selectGender);
+  // 추천 API 요청에 필요한 유저 피부 타입 및 피부 고민
+  const currentSkinType = useUserStore(selectSkinType);
+  // concerns는 store에 label값으로 저장됨 — filterMeta.tags.tag도 label값이므로 직접 매칭 가능
+  const userConcerns = useUserStore((state) => state.concerns);
+  const routineSteps = getRoutineSteps(currentGender);
 
-  // 검색 + 피뷰추천 필터 적용
-  const displayProducts = useMemo(() => {
-    let list = categoryFilteredProducts;
-    if (addSearch) {
-      const keyword = addSearch.toLowerCase();
-      list = list.filter(
-        (product) =>
-          product.name.toLowerCase().includes(keyword) ||
-          product.brand.toLowerCase().includes(keyword),
-      );
+  // 현재 루틴 단계 정보
+  const currentStep = routineSteps.find((step) => step.code === openStep);
+  const currentLabel = currentStep?.label ?? "";
+
+  // 카테고리 필터 메타데이터 가져오기
+  const availableCategories = currentStep?.categories ?? [];
+
+  // 탭 표시용 — 같은 name의 카테고리를 하나로 합침 (남성 스킨/토너 중복 방지)
+  const uniqueCategoryTabs = availableCategories.reduce<
+    { name: string; categoryId: number; categoryIds: number[] }[]
+  >((acc, cat) => {
+    const existing = acc.find((t) => t.name === cat.name);
+    if (existing) {
+      existing.categoryIds.push(cat.categoryId);
+    } else {
+      acc.push({
+        name: cat.name,
+        categoryId: cat.categoryId,
+        categoryIds: [cat.categoryId],
+      });
     }
-    const sorted = [...list].sort((a, b) => b.matchScore - a.matchScore);
-    return isPiview ? sorted.slice(0, 5) : sorted;
-  }, [categoryFilteredProducts, addSearch, isPiview]);
+    return acc;
+  }, []);
+
+  // 추천 API의 concernId 조회용으로만 filterMeta 사용
+  const { data: filterMeta } = useProductFilters();
+
+  // selectedCategoryId가 없거나 현재 목록에 없으면 첫 번째 카테고리를 기본값으로 파생
+  const effectiveCategoryId =
+    selectedCategoryId !== null &&
+    availableCategories.some((cat) => cat.categoryId === selectedCategoryId)
+      ? selectedCategoryId
+      : (availableCategories[0]?.categoryId ?? null);
+
+  // 실제 제품 검색 API 연동
+  const selectedCategory = availableCategories.find(
+    (cat) => cat.categoryId === effectiveCategoryId,
+  );
+
+  // 선택된 탭 (uniqueCategoryTabs 기준 — 같은 name 묶음)
+  const selectedTab =
+    uniqueCategoryTabs.find((tab) =>
+      tab.categoryIds.includes(effectiveCategoryId ?? -1),
+    ) ??
+    uniqueCategoryTabs[0] ??
+    null;
+
+  const searchParams = {
+    q: searchQuery || undefined,
+    bigCategoryId: selectedCategory?.bigCategoryId ?? undefined,
+    categoryId: effectiveCategoryId ?? undefined,
+    size: 20,
+  };
+
+  const { products, isLoading } = useProductSearch(searchParams);
+
+  // 피뷰추천 API 뮤테이션 — POST /recommendations/products
+  const recommendationMutation = useMutation({
+    mutationFn: () => {
+      if (!columnId) {
+        return Promise.reject(new Error("columnId가 설정되지 않았습니다."));
+      }
+      const concernId = userConcerns
+        .map(
+          (concern) =>
+            filterMeta?.tags?.find((tag) => tag.tag === concern)?.tagId,
+        )
+        .find((id) => id !== undefined);
+      return productService.getRecommendations({
+        skinType: currentSkinType
+          ? toSkinTypeEnum(currentSkinType as SkinType)
+          : undefined,
+        gender: currentGender ?? undefined,
+        ...(concernId !== undefined && { concernId }),
+        targetRoutineColId: columnId,
+      });
+    },
+    onSuccess: (data) => {
+      // 전체 응답을 카테고리명 키 그대로 저장 — 탭 선택 시 필터링용
+      setRecommendedData(data);
+      // 전체 추천 제품 ID 집합 — PICK 배지 표시용
+      const allProducts = Object.values(data).flat();
+      setRecommendedProductIdSet(new Set(allProducts.map((p) => p.productId)));
+      setIsRecommendMode(true);
+      setCurrentPage(1);
+    },
+    onError: (error) => {
+      console.error("피뷰추천 API 실패:", error);
+    },
+  });
+
+  // 피뷰추천 버튼 클릭 — 추천 모드 토글
+  const handleRecommendationToggle = () => {
+    if (isRecommendMode) {
+      setIsRecommendMode(false);
+      setRecommendedData({});
+      setRecommendedProductIdSet(new Set());
+      setCurrentPage(1);
+    } else {
+      recommendationMutation.mutate();
+    }
+  };
+
+  // 추천 모드 — 선택된 카테고리명으로 recommendedData 필터링
+  // 카테고리 미선택 or 해당 카테고리 데이터 없으면 전체 flat
+  const recommendedProducts: MappedProduct[] = isRecommendMode
+    ? (() => {
+        const tabName = selectedTab?.name;
+        if (!tabName)
+          return Object.values(recommendedData)
+            .flat()
+            .map(mapRecommendResponse);
+        const fromCategory = recommendedData[tabName];
+        // 매핑 안 되는 카테고리 선택 시 빈 배열 반환 — 전체 노출 방지
+        return (fromCategory ?? []).map(mapRecommendResponse);
+      })()
+    : [];
+
+  // 추천 모드면 추천 제품, 아니면 검색 결과 사용
+  const displayProducts = isRecommendMode ? recommendedProducts : products;
+  const totalPages = Math.ceil(displayProducts.length / PAGE_SIZE);
+  const pagedProducts = displayProducts.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE,
+  );
+
+  // 검색어 또는 카테고리가 바뀌면 1페이지로 리셋
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    setCurrentPage(1);
+  };
+
+  const handleCategoryChange = (categoryId: number) => {
+    setSelectedCategoryId(categoryId);
+    setCurrentPage(1); // 카테고리 변경 시 항상 1페이지로 (일반/추천 모드 공통)
+  };
 
   return (
     <>
@@ -105,224 +213,192 @@ export default function RoutineAddModal({
       <div className="fixed inset-0 z-[70] flex items-center justify-center pointer-events-none py-10 px-5">
         <div className="bg-white flex flex-col pointer-events-auto rounded-[20px] w-full max-w-[420px] max-h-full shadow-[0_8px_40px_rgba(0,0,0,0.18)] overflow-hidden">
           <div className="px-6 pb-6 overflow-y-auto flex-1 min-h-0">
-            {/* 헤더 */}
+            {/* 헤더 — 타이틀, 피뷰추천 버튼, 닫기 버튼 */}
             <div className="flex items-center justify-between mt-[15px]">
-              <h3 className="text-base font-bold text-text-primary">
-                {currentLabel} 선택
+              <h3 className="text-[16px] font-bold text-[#656563]">
+                {currentLabel}
               </h3>
+              {/* 우측 버튼 그룹 */}
               <div className="flex items-center gap-2">
+                {/* Piview pick 버튼 — 토글 시 활성화 */}
                 <button
-                  onClick={() => setIsPiview((prev) => !prev)}
-                  className={`flex items-center gap-1 cursor-pointer transition-all active:scale-95 px-3 py-[5px] rounded-[20px] text-xs font-semibold ${
-                    isPiview
-                      ? "bg-brand text-white border-none"
-                      : "bg-white text-brand border border-brand"
-                  }`}
+                  onClick={handleRecommendationToggle}
+                  disabled={recommendationMutation.isPending}
+                  className={[
+                    "flex items-center gap-1 h-8 px-3 rounded-full cursor-pointer text-[14px] font-bold transition-all duration-200 disabled:cursor-not-allowed active:scale-[0.96] active:shadow-none",
+                    isRecommendMode
+                      ? "bg-[#f3b8d3] text-[#fdfdfb] shadow-[0_3px_8px_rgba(166,157,146,0.95),inset_0_1px_0_rgba(255,255,255,0.18)]"
+                      : "bg-[#f0b8d2] text-[#fdfdfb] shadow-[0_3px_7px_rgba(200,160,180,0.7),inset_0_1px_0_rgba(255,255,255,0.8)] hover:shadow-[0_4px_10px_rgba(200,160,180,0.85)] hover:bg-[#f7d6e5]",
+                  ].join(" ")}
                 >
-                  ☆ 피뷰추천
+                  {recommendationMutation.isPending ? (
+                    <Loader2 size={13} className="animate-spin" />
+                  ) : (
+                    <Star
+                      size={15}
+                      fill={isRecommendMode ? "#fee03d" : "none"}
+                      color={isRecommendMode ? "#f7ecaf" : "currentColor"}
+                    />
+                  )}
+                  피뷰 추천
                 </button>
+                {/* 닫기 버튼 */}
                 <button
                   onClick={onClose}
-                  className="flex items-center justify-center w-7 h-7 rounded-full bg-[var(--color-bg-muted-warm)] border-none cursor-pointer"
+                  className="flex items-center justify-center w-8 h-8 rounded-full bg-[#F5F2EC] border-none cursor-pointer transition-colors hover:bg-[#EAE5DA]"
                 >
-                  <X size={14} color="#888" />
+                  <X size={14} color="#7A6F5C" />
                 </button>
               </div>
             </div>
 
-            {/* 검색바 */}
-            <div className="relative mt-3 mb-3">
-              <Search
-                size={16}
-                color="var(--color-text-stone)"
-                className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-              />
-              <input
-                type="text"
-                value={addSearch}
-                onChange={(e) => setAddSearch(e.target.value)}
-                placeholder="제품명 또는 브랜드 검색"
-                className="w-full h-10 pl-9 pr-3 rounded-xl border border-border-warm bg-[#FAF8F5] text-xs text-[#2A2A2A] outline-none"
-                style={{
-                  paddingRight: addSearch
-                    ? SEARCH_INPUT_PADDING_CLEAR
-                    : SEARCH_INPUT_PADDING_DEFAULT,
-                }}
-              />
-              {addSearch && (
-                <button
-                  onClick={() => setAddSearch("")}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center justify-center w-5 h-5 rounded-full bg-border-warm border-none cursor-pointer"
-                >
-                  <X size={12} color="#888" />
-                </button>
-              )}
-            </div>
-
-            {/* 카테고리 필터 칩 — SR/LT는 칩 없음 */}
-            {STEP_CATEGORY_CHIPS[openStep]?.length > 0 && (
-              <div className="flex gap-2 overflow-x-auto pb-1 mb-3 scrollbar-hide">
-                {STEP_CATEGORY_CHIPS[openStep].map((chip) => (
-                  <button
-                    key={chip}
-                    onClick={() =>
-                      setSelectedCategory((prev) =>
-                        prev === chip ? null : chip,
-                      )
-                    }
-                    style={{
-                      ...MODAL_CATEGORY_CHIP_BASE,
-                      backgroundColor:
-                        selectedCategory === chip
-                          ? "var(--color-brand)"
-                          : "var(--color-chip-base)",
-                      color:
-                        selectedCategory === chip
-                          ? "white"
-                          : "var(--color-text-secondary)",
-                      fontWeight: selectedCategory === chip ? 600 : 400,
-                    }}
-                  >
-                    {chip}
-                  </button>
-                ))}
+            {/* 추천 모드 활성 시 안내 배너 */}
+            {isRecommendMode && (
+              <div className="flex items-center gap-1.5 mt-2 px-2 rounded-xl text-[14px] font-semibold bg-[#fff] text-[#555454]">
+                {recommendedProducts.length > 0
+                  ? `사용자 맞춤형 ${recommendedProducts.length}개 제품 추천`
+                  : "추천 결과가 없습니다"}
               </div>
             )}
 
-            {/* 제품 목록 */}
-            {displayProducts.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-10 text-[var(--color-text-stone)]">
-                <Package size={32} className="mb-2 opacity-50" />
-                <p className="text-xs">해당 카테고리에 제품이 없습니다</p>
+            {/* 검색바 — 추천 모드에서는 숨김 */}
+            {!isRecommendMode && (
+              <div className="relative mt-3 mb-3">
+                <Search
+                  size={16}
+                  color="var(--color-text-stone)"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(event) => handleSearchChange(event.target.value)}
+                  placeholder="제품명 또는 브랜드 검색"
+                  className={[
+                    "w-full h-10 pl-9 rounded-xl border border-border-warm bg-[#FAF8F5] text-xs text-[#2A2A2A] outline-none",
+                    searchQuery ? "pr-9" : "pr-3",
+                  ].join(" ")}
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => handleSearchChange("")}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center justify-center w-5 h-5 rounded-full bg-border-warm border-none cursor-pointer"
+                  >
+                    <X size={12} color="#888" />
+                  </button>
+                )}
               </div>
-            ) : (
-              <div className="flex flex-col gap-3">
-                {displayProducts.map((product) => {
-                  // ⚠️ API 연동 시 서버 루틴 상태로 교체
-                  const isAdded =
-                    routine[openStep]?.some((p) => p.id === product.id) ?? false;
+            )}
+
+            {/* 카테고리 필터 - 현재 루틴 단계의 소분류만 표시 */}
+            {uniqueCategoryTabs.length > 0 && (
+              <div className="flex flex-wrap gap-2 p-[5px_0px] min-h-[32px] mb-2">
+                {uniqueCategoryTabs.map((tab) => {
+                  const isActive = tab.categoryIds.includes(
+                    effectiveCategoryId ?? -1,
+                  );
                   return (
-                    <div
-                      key={product.id}
-                      className="rounded-[14px] p-4 border"
-                      style={{
-                        borderColor: isAdded
-                          ? "var(--color-brand-light)"
-                          : "var(--color-border-warm)",
-                        backgroundColor: isAdded
-                          ? "var(--color-brand-bg)"
-                          : "white",
+                    <button
+                      key={tab.categoryId}
+                      onClick={() => {
+                        if (!isActive) handleCategoryChange(tab.categoryId);
                       }}
+                      className="category-pill-button"
+                      data-active={isActive}
                     >
-                      {/* 제품 정보 행 */}
-                      <div className="flex gap-3">
-                        {/* 이미지/코드 배지 */}
-                        <div
-                          className="shrink-0 flex items-center justify-center rounded-xl text-xs font-bold text-text-muted"
-                          style={{ width: 72, height: 72 }}
-                        >
-                          {product.emoji ?? product.category.slice(0, 2)}
-                        </div>
-                        {/* 텍스트 */}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs text-text-muted mb-0.5">
-                            {product.brand}
-                          </p>
-                          <p className="text-sm font-semibold text-text-primary leading-snug">
-                            {product.name}
-                          </p>
-                          {/* 피부타입 칩 */}
-                          {product.skinTypes.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-1.5">
-                              {product.skinTypes.map((skinType) => {
-                                const tc = SKIN_TYPE_TAG_COLORS[skinType];
-                                return tc ? (
-                                  <span
-                                    key={skinType}
-                                    className="text-[11px] px-2 py-[2px] rounded-[4px] font-semibold"
-                                    style={{
-                                      backgroundColor: tc.bg,
-                                      color: tc.text,
-                                    }}
-                                  >
-                                    {skinType}
-                                  </span>
-                                ) : null;
-                              })}
-                            </div>
-                          )}
-                          {/* 기능 칩 */}
-                          {product.effects.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {product.effects.slice(0, 3).map((fn) => {
-                                const fc = SKIN_FUNCTION_COLORS[fn];
-                                return fc ? (
-                                  <span
-                                    key={fn}
-                                    className="text-[11px] px-2 py-[2px] rounded-[4px] font-bold"
-                                    style={{
-                                      backgroundColor: fc.chip,
-                                      color: fc.accent,
-                                    }}
-                                  >
-                                    {fn}
-                                  </span>
-                                ) : null;
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* 추천 이유 텍스트 */}
-                      {/* ⚠️ API 연동 시 product.reason으로 교체 */}
-                      <p className="text-xs text-text-muted mt-3 leading-relaxed">
-                        복합성 피부에도 사용 가능하며, 특정 고민 해결에 도움을
-                        줄 수 있는 제품이에요.
-                      </p>
-
-                      {/* 액션 버튼 행 */}
-                      <div className="flex items-center gap-2 mt-3">
-                        {/* 루틴추가 */}
-                        <button
-                          onClick={() => onAdd(product)}
-                          disabled={isAdded}
-                          className="flex items-center justify-center gap-1 flex-1 h-9 rounded-[40px] border-none cursor-pointer transition-all text-sm font-bold"
-                          style={{
-                            backgroundColor: isAdded
-                              ? "var(--color-brand-bg)"
-                              : "var(--color-brand)",
-                            color: isAdded ? "var(--color-brand)" : "white",
-                          }}
-                        >
-                          + {isAdded ? "추가됨" : "루틴추가"}
-                        </button>
-                        {/* 보유추가 */}
-                        <button className="flex items-center gap-1 h-9 px-3 rounded-[40px] border border-border text-xs text-text-secondary cursor-pointer bg-white">
-                          {/* ⚠️ API 연동 시 보유추가 기능 연결 */}
-                          🧴 보유추가
-                        </button>
-                        {/* 찜 */}
-                        <button
-                          className="flex items-center justify-center cursor-pointer"
-                          style={MODAL_ACTION_ICON_BTN}
-                        >
-                          {/* ⚠️ API 연동 시 찜 기능 연결 */}
-                          <Heart size={15} className="text-text-muted" />
-                        </button>
-                        {/* 비교 */}
-                        <button
-                          className="flex items-center justify-center cursor-pointer"
-                          style={MODAL_ACTION_ICON_BTN}
-                        >
-                          {/* ⚠️ API 연동 시 비교 기능 연결 */}
-                          <GitCompare size={15} className="text-text-muted" />
-                        </button>
-                      </div>
-                    </div>
+                      {getCategoryDisplayName(tab.name)}
+                    </button>
                   );
                 })}
               </div>
+            )}
+
+            {/* 로딩 상태 — 일반 검색 로딩 또는 추천 API 로딩 */}
+            {(isLoading && !isRecommendMode) ||
+            recommendationMutation.isPending ? (
+              <div className="flex flex-col items-center justify-center py-10 gap-2 text-text-muted">
+                <Loader2 size={24} className="animate-spin opacity-50" />
+                <p className="text-xs">제품을 불러오는 중...</p>
+              </div>
+            ) : displayProducts.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 text-[var(--color-text-stone)]">
+                <Package size={32} className="mb-2 opacity-50" />
+                <p className="text-xs">
+                  {isRecommendMode
+                    ? "추천 결과가 없습니다"
+                    : "검색 결과가 없습니다"}
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="flex flex-col gap-3">
+                  {pagedProducts.map((product) => {
+                    const isInCompare = compareItems.some(
+                      (item) => item.id === product.id,
+                    );
+
+                    return (
+                      <ProductCard
+                        key={product.id}
+                        id={product.id}
+                        name={product.name}
+                        brand={product.brand}
+                        imageUrl={product.imageUrl ?? undefined}
+                        category={product.category}
+                        skinTypes={product.skinTypes}
+                        effects={product.effects}
+                        variant="modal"
+                        isRecommended={recommendedProductIdSet.has(product.id)}
+                        inRoutine={draftProductIds.includes(product.id)}
+                        onAddRoutine={() => onAdd(product.id)}
+                        onToggleLike={() => toggleLike(product.id)}
+                        isInCompare={isInCompare}
+                        onToggleCompare={() => toggleCompare(product)}
+                      />
+                    );
+                  })}
+                </div>
+
+                {/* 페이지네이션 */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-center gap-1 mt-4 mb-1">
+                    <button
+                      onClick={() =>
+                        setCurrentPage((prev) => Math.max(prev - 1, 1))
+                      }
+                      disabled={currentPage === 1}
+                      className="w-7 h-7 rounded-full border border-border-warm bg-white text-xs text-text-muted disabled:opacity-30 cursor-pointer disabled:cursor-default"
+                    >
+                      ‹
+                    </button>
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map(
+                      (page) => (
+                        <button
+                          key={page}
+                          onClick={() => setCurrentPage(page)}
+                          className={[
+                            "w-7 h-7 rounded-full border text-xs font-semibold cursor-pointer transition-colors",
+                            currentPage === page
+                              ? "border-(--color-brand) bg-(--color-brand) text-white"
+                              : "border-border-warm bg-white text-text-muted",
+                          ].join(" ")}
+                        >
+                          {page}
+                        </button>
+                      ),
+                    )}
+                    <button
+                      onClick={() =>
+                        setCurrentPage((prev) => Math.min(prev + 1, totalPages))
+                      }
+                      disabled={currentPage === totalPages}
+                      className="w-7 h-7 rounded-full border border-border-warm bg-white text-xs text-text-muted disabled:opacity-30 cursor-pointer disabled:cursor-default"
+                    >
+                      ›
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>

@@ -61,37 +61,7 @@ export interface ProductSummaryResponse {
 }
 
 // ── GET /products/{productId} API ─────────────────────────────────
-
-export interface ProductIngredientDetailResponse {
-  position: number;
-  nameKo: string | null;
-  nameEn: string | null;
-  ewgGrade: "low" | "medium" | "high" | "unknown" | null;
-  functions: string | null;
-  isAllergen: boolean;
-}
-
-export interface ProductDetailResponse {
-  productId: number;
-  imageUrl: string | null;
-  brandName: string | null;
-  productName: string | null;
-  categoryName?: string | null; // 스웨거 미정의 — 백엔드 확인 필요
-  description: string | null;
-  skinTypes: string[];
-  tags: string[];
-  price: number | null;
-  volume: string | null;
-  lowCount: number;
-  mediumCount: number;
-  highCount: number;
-  unknownCount: number;
-  cautionIngredients: string[];
-  allergenIngredients: string[];
-  ingredients: ProductIngredientDetailResponse[];
-  skinTypeScores: Record<string, number>;
-  liked: boolean;
-}
+// ProductDetailResponse and ProductIngredientDetailResponse moved to detail.ts
 
 // GET /products 응답 전체
 export interface ProductPageResponse {
@@ -102,15 +72,27 @@ export interface ProductPageResponse {
   totalCount: number;
 }
 
-// ── UI 공용 타입 ──────────────────────────────────────────────────
+// ── POST /api/v1/recommendations/products API ─────────────────────────────
 
-// 보유제품 store + OwnedTab 공용 최소 타입
-// ⚠️ API 연동 시 MyCosItem(types/myCos.ts)으로 교체 예정
-export interface OwnedProduct {
-  id: string;
-  brand: string;
+/** 추천 요청 DTO — 모든 필드 optional */
+export interface RecommendRequestDto {
+  skinType?: string;           // "dry" | "oily" | "combination" | "subuji"
+  gender?: string;             // "MEN" | "WOMEN"
+  concernId?: number;          // int64 — 피부 고민 ID
+  targetRoutineColId?: number; // int64 — 루틴 컬럼 ID
+}
+
+/** 추천 응답 DTO — ProductSummaryResponse와 달리 tags 필드 없음 */
+export interface RecommendResponseDto {
+  productId: number;
   name: string;
-  category: string;
-  emoji?: string;
-  skinTypes?: string[];
+  brandName: string;
+  categoryName: string;
+  imageUrl: string;
+  price: number;
+  volume: string;
+  description: string;
+  skinTypes: string[];  // ["dry", "oily"] — 영문 소문자
+  concernName: string;
+  liked: boolean;
 }

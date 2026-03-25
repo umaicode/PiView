@@ -1,64 +1,8 @@
-/**
- * types/routine/routine.ts
- * 루틴 도메인 타입 — 스웨거 기준
- */
+import type { ProductSummaryResponse } from "../product/product";
 
-// ── 루틴 스텝 키 ─────────────────────────────────────────────────
 export type RoutineStepKey =
   | "cleanser" | "shaving" | "toner"
   | "serum" | "lotion" | "cream" | "sunscreen";
-
-// ── useRoutineStore 상태 ──────────────────────────────────────────
-// ⚠️ 루틴 API 연동 시 실제 응답 기준으로 수정 필요
-export interface MyRoutine {
-  id: number;
-  userId: number;
-  routineColumnId: number;
-  productId: number | null;
-  order: number;
-}
-
-// ── PUT /routines/draft 요청 body ─────────────────────────────────
-export interface DraftItem {
-  columnId: number;
-  productId: number;
-  stepOrder: number;
-}
-
-// ── 성분 충돌 분석 (useRoutineStore.analysis) ─────────────────────
-// ⚠️ 루틴 분석 API 연동 시 실제 응답 기준으로 수정 필요
-export type ConflictLevel = "certain" | "caution" | "myth";
-
-export interface ConflictAlert {
-  ingredientA: string;
-  ingredientB: string;
-  level: ConflictLevel;
-  reason: string;
-  productAName: string;
-  productBName: string;
-}
-
-export interface RoutineAnalysis {
-  missingSteps: string[];
-  conflicts: ConflictAlert[];
-  overlapWarnings: string[];
-}
-
-// ── 스웨거 응답 스키마 기반 타입 ──────────────────────────────────
-
-/**
- * GET /api/v1/products, GET /api/v1/routines/draft 등 공통 제품 요약
- * 스웨거: ProductSummaryResponse
- */
-export interface ProductSummaryResponse {
-  productId: number;
-  name: string;
-  brandName: string;
-  categoryName: string;
-  imageUrl: string;
-  skinTypes: string[];
-  tags: string[];
-}
 
 /**
  * GET /api/v1/routines/draft 응답 아이템
@@ -115,7 +59,6 @@ export interface RoutineResponse {
 /**
  * POST /api/v1/routines 요청 body
  * 스웨거: CreateRoutineRequest
- * ⚠️ API 연동 시 userId는 서버가 토큰에서 추출하는 구조면 제거 가능
  */
 export interface CreateRoutineRequest {
   userId?: number;
@@ -123,61 +66,22 @@ export interface CreateRoutineRequest {
 }
 
 /**
- * PATCH /api/v1/routines/{routineId}/order 요청 아이템
- * 스웨거: RoutineDetailOrderDto
+ * POST /api/v1/routines/{routineId}/edit-start 응답
+ * 스웨거: EditRoutineLoadResponse
+ * 기존 루틴을 Redis draft로 복사한 결과
  */
-export interface RoutineDetailOrderDto {
-  routineDetailId: number;
-  stepOrder: number;
+export interface EditRoutineLoadResponse {
+  routineId: number;
+  title: string;
+  draftItems: DraftItemDto[];
 }
 
 /**
- * PATCH /api/v1/routines/{routineId}/order 요청 body
- * 스웨거: RoutineOrderUpdateRequest
+ * PUT /api/v1/routines/{routineId} 요청 body
+ * 스웨거: UpdateRoutineRequest
+ * Redis draft 내용 + title로 기존 루틴을 완전 덮어씀
  */
-export interface RoutineOrderUpdateRequest {
-  updatedOrders: RoutineDetailOrderDto[];
+export interface UpdateRoutineRequest {
+  title: string;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ⚠️ API 연동 시 삭제 예정 — 로컬 전용 타입 (퍼블리싱 단계)
-// ═══════════════════════════════════════════════════════════════
-
-/**
- * 로컬 전용 제품 타입 (mock)
- * ⚠️ API 연동 시 ProductSummaryResponse로 교체 후 삭제
- */
-export interface LocalProduct {
-  id: string;
-  brand: string;
-  name: string;
-  category: string;
-  emoji: string;
-  skinTypes: string[];
-  effects: string[];
-  matchScore: number;
-  imageUrl?: string;
-  price?: number;
-  ewgSafe?: number;
-  ewgCaution?: number;
-  ewgDanger?: number;
-}
-
-/**
- * 로컬 루틴 맵 (스텝 코드 → 제품 배열)
- * ⚠️ API 연동 시 RoutineStepGroupDto로 교체 후 삭제
- */
-export type LocalRoutineMap = Record<string, LocalProduct[]>;
-
-/**
- * 저장된 루틴 타입 (localStorage 전용)
- * ⚠️ API 연동 시 RoutineListResponse로 교체 후 삭제
- */
-export interface SavedRoutine {
-  id: string;
-  name: string;
-  routine: LocalRoutineMap;
-  productCount: number;
-  savedAt: number;
-  isMain: boolean;
-}

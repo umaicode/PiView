@@ -1,14 +1,40 @@
 "use client";
 
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Camera, Target } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { SKIN_TEST_OPTIONS } from "@/constants";
+
+/** 피부 진단 방법 선택 옵션 (AI 사진 / 직접 선택) */
+interface SkinTestOption {
+  key: string;
+  href: string;
+  icon: LucideIcon;
+  title: string;
+  desc: string;
+}
+
+const SKIN_TEST_OPTIONS: SkinTestOption[] = [
+  {
+    key: "photo",
+    href: "/skin-test/photo",
+    icon: Camera,
+    title: "AI 사진 분석",
+    desc: "얼굴 사진으로 AI가 피부 타입을 분석해요",
+  },
+  {
+    key: "know",
+    href: "/skin-test/select",
+    icon: Target,
+    title: "알고 있어요",
+    desc: "피부 타입을 직접 선택합니다",
+  },
+];
 
 export default function SkinTestPage() {
   const router = useRouter();
 
   return (
-    <div className="flex flex-col min-h-screen px-6 bg-warm-bg pb-32">
+    <div className="flex flex-col min-h-screen px-10 bg-warm-bg">
       <div className="flex items-center pt-4 pb-2">
         <button
           onClick={() => router.push("/welcome")}
@@ -48,11 +74,11 @@ export default function SkinTestPage() {
         })}
       </div>
 
-      {/* 하단 고정 버튼 영역 */}
-      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-107.5 px-5 pb-8 pt-3">
+      {/* 하단 버튼 영역 */}
+      <div className="w-[250px] mx-auto px-6 pb-10 pt-4 mt-auto">
         <button
           onClick={() => router.push("/home")}
-          className="w-full h-13 rounded-[32px] text-[18px] transition-all duration-200 border-none font-extrabold bg-border-warm text-gray-800 cursor-pointer"
+          className="w-full h-[52px] rounded-[32px] font-bold text-[18px] transition-all duration-200 border-none bg-border-warm text-gray-800 cursor-pointer"
         >
           건너뛰기
         </button>

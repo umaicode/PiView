@@ -1,6 +1,7 @@
 package com.piview.backend.domain.routine.core.service;
 
 
+import com.piview.backend.domain.product.catalog.service.ProductConcernQueryService;
 import com.piview.backend.domain.routine.core.dto.RoutineDraftDto.*;
 import com.piview.backend.domain.routine.core.dto.RoutineDraftDto.AddDraftItemRequest;
 import com.piview.backend.domain.routine.core.dto.RoutineDraftDto.DraftItemDto;
@@ -44,6 +45,9 @@ public class RoutineService {
   private final ProductLikeRepository productLikeRepository;
   private final RedisDraftService redisDraftService;
 
+  // product의 피부고민을 가져오기 위해서 필요합니다.
+  private final ProductConcernQueryService productConcernQueryService;
+
   // 제품을 루틴(redis)에 추가
   @Transactional(readOnly = true) // DB에서 Product만 조회하므로 readOnly
   public List<DraftItemDto> addProductToDraft(Long userId, AddDraftItemRequest request) {
@@ -62,11 +66,14 @@ public class RoutineService {
 
     boolean isLiked = productLikeRepository.findByUserIdAndProductId(userId, product.getProductId()).isPresent();
 
+    // 피부고민을 가져오기 위해서 list를 만들어 줍니다.
+    List<String> concerns = productConcernQueryService.resolveConcernsForProduct(product.getProductId());
+
     // 새로운 DraftItemDto 생성 및 리스트에 추가
     DraftItemDto newItem = new DraftItemDto(
         request.columnId(),
         nextOrder,
-        ProductSummaryResponse.from(product, isLiked)
+        ProductSummaryResponse.from(product, isLiked, concerns)
     );
     currentDraft.add(newItem);
 
@@ -183,6 +190,14 @@ public class RoutineService {
   private RoutineResponse convertToRoutineResponse(MyRoutine routine, Long userId) {
     List<Long> likedProductIds = productLikeRepository.findLikedProductIdsByUserId(userId);
 
+    // concern까지 가져오기 위해 추가해야할 칭구들
+    List<Long> routineProductIds = routine.getDetails().stream()
+            .map(detail -> detail.getProduct().getProductId())
+            .distinct()
+            .toList();
+
+    Map<Long, List<String>> concernsByProductId = productConcernQueryService.buildConcernsByProductIds(routineProductIds);
+
     Map<RoutineColumn, List<RoutineDetail>> groupedDetails = routine.getDetails().stream()
         .collect(Collectors.groupingBy(RoutineDetail::getRoutineColumn));
 
@@ -198,7 +213,9 @@ public class RoutineService {
                 return new RoutineProductDto(
                     detail.getId(),
                     detail.getStepOrder(),
-                    ProductSummaryResponse.from(detail.getProduct(), isLiked)
+                    ProductSummaryResponse.from(detail.getProduct(),
+                            isLiked,
+                            concernsByProductId.getOrDefault(detail.getProduct().getProductId(), List.of()))
                 );
               })
               .toList();
@@ -249,7 +266,7 @@ public class RoutineService {
 
     // 권한 검증
     if (!routine.getUserId().equals(userId)) {
-      throw new IllegalArgumentException("본인의 루틴만 삭제할 수 있습니다.");
+      throw new CustomException(ErrorCode.ACCESS_DENIED);
     }
 
     // 삭제하려는 루틴이 메인 루틴인지 기억해둠
@@ -266,5 +283,111 @@ public class RoutineService {
       routineRepository.findFirstByUserIdOrderByIdDesc(userId)
           .ifPresent(newMain -> newMain.changeMainStatus(true));
     }
+  }
+
+  //----------------------------------------------------
+
+  // 기존 루틴을 Redis 임시 장바구니로 끌어오기
+  @Transactional
+  public RoutineDraftDto.EditRoutineLoadResponse loadRoutineToDraft(Long userId, Long routineId) {
+    // 본인의 루틴인지 확인하고 가져오기
+    MyRoutine routine = routineRepository.findByIdWithDetails(routineId)
+        .orElseThrow(() -> new CustomException(ErrorCode.ROUTINE_NOT_FOUND));
+
+    if (!routine.getUserId().equals(userId)) {
+      throw new CustomException(ErrorCode.ACCESS_DENIED);
+    }
+
+    List<Long> likedProductIds = productLikeRepository.findLikedProductIdsByUserId(userId);
+
+    List<Long> routineProductIds = routine.getDetails().stream()
+        .map(detail -> detail.getProduct().getProductId())
+        .distinct()
+        .toList();
+    Map<Long, List<String>> concernsByProductId = productConcernQueryService.buildConcernsByProductIds(routineProductIds);
+
+    // 기존 루틴 상세 내역을 Redis용 DTO로 변환
+    List<RoutineDraftDto.DraftItemDto> draftItems = routine.getDetails().stream()
+        .map(detail -> {
+          Long productId = detail.getProduct().getProductId();
+          boolean isLiked = likedProductIds.contains(productId);
+          return new RoutineDraftDto.DraftItemDto(
+              detail.getRoutineColumn().getId(),
+              detail.getStepOrder(),
+              ProductSummaryResponse.from(
+                  detail.getProduct(),
+                  isLiked,
+                  concernsByProductId.getOrDefault(productId, List.of())
+              )
+          );
+        })
+        .toList();
+
+    // Redis에 덮어쓰기 (기존에 작성 중이던 다른 임시 루틴은 날아감)
+    redisDraftService.saveDraftItems(userId, draftItems);
+
+    return new RoutineDraftDto.EditRoutineLoadResponse(
+        routine.getId(),
+        routine.getTitle(),
+        draftItems
+    );
+  }
+
+  // 수정을 마친 Redis 데이터를 기존 루틴에 최종 덮어쓰기
+  @Transactional
+  public RoutineResponseDto.RoutineResponse updateRoutine(Long userId, Long routineId, String newTitle) {
+    // 루틴 조회 및 권한 검증
+    MyRoutine routine = routineRepository.findByIdWithDetails(routineId)
+        .orElseThrow(() -> new CustomException(ErrorCode.ROUTINE_NOT_FOUND));
+
+    if (!routine.getUserId().equals(userId)) {
+      throw new CustomException(ErrorCode.ACCESS_DENIED);
+    }
+
+    // 수정 완료된 Redis 데이터 불러오기
+    List<RoutineDraftDto.DraftItemDto> draftItems = redisDraftService.getDraftItems(userId);
+    if (draftItems == null || draftItems.isEmpty()) {
+      throw new CustomException(ErrorCode.EMPTY_ROUTINE_DRAFT);
+    }
+
+    routine.updateTitle(newTitle);
+
+    // 기존 루틴 상세 데이터 싹 비우기 (JPA orphanRemoval = true 설정 덕분에 DB에서도 깔끔하게 지워짐)
+    routine.getDetails().clear();
+
+    // Redis 데이터를 기반으로 새로운 루틴 상세 데이터 생성 및 채우기
+    List<Integer> columnIds = draftItems.stream().map(RoutineDraftDto.DraftItemDto::columnId).toList();
+    List<Long> productIds = draftItems.stream()
+        .filter(item -> item.product() != null)
+        .map(item -> item.product().getProductId())
+        .toList();
+
+    Map<Integer, RoutineColumn> columnMap = routineColumnRepository.findAllById(columnIds).stream()
+        .collect(Collectors.toMap(RoutineColumn::getId, c -> c));
+    Map<Long, Product> productMap = productRepository.findByProductIdIn(productIds).stream()
+        .collect(Collectors.toMap(Product::getProductId, p -> p));
+
+    for (RoutineDraftDto.DraftItemDto item : draftItems) {
+      RoutineColumn column = columnMap.get(item.columnId());
+      Product product = productMap.get(item.product().getProductId());
+
+      if (column == null) throw new CustomException(ErrorCode.ROUTINE_COLUMN_NOT_FOUND);
+      if (product == null) throw new CustomException(ErrorCode.COSMETICS_NOT_FOUND);
+
+      RoutineDetail detail = RoutineDetail.builder()
+          .myRoutine(routine)
+          .routineColumn(column)
+          .product(product)
+          .stepOrder(item.stepOrder())
+          .build();
+
+      routine.getDetails().add(detail);
+    }
+
+    // 변경사항 저장 및 Redis 비우기
+    routineRepository.save(routine);
+    redisDraftService.clearDraft(userId);
+
+    return convertToRoutineResponse(routine, userId);
   }
 }

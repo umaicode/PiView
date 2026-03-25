@@ -10,15 +10,7 @@
  * → "이 import가 mock인가 아닌가"를 경로만 봐도 알 수 있도록 분리 유지.
  */
 
-export * from "./categoryColors";
 export * from "./skinTypes";
-export * from "./skinTypeInfo";
-export * from "./routineSteps"; // ROUTINE_STEPS, MYPAGE_ROUTINE_STEPS, RoutineStepKey, INITIAL_ROUTINE
-export * from "./routineEvaluation";
+export * from "./routineSteps"; // ROUTINE_STEPS, WOMEN_ROUTINE_STEPS, MEN_ROUTINE_STEPS, getRoutineSteps, RoutineStep
 export * from "./survey";
-export * from "./skinTestOptions";
-export * from "./insights";
-export * from "./userSettings";
-export * from "./productCategories";
-export * from "./allergens";
 export * from "./pagination";

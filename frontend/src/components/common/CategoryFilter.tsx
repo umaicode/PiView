@@ -1,7 +1,6 @@
 "use client";
 
 import { useLayoutEffect } from "react";
-import { CATEGORY_COLORS } from "@/constants/categoryColors";
 import { useProductFilters } from "@/hooks";
 import { getCategoryDisplayName } from "@/utils/format";
 import type { BigCategoryFilterDto } from "@/types/product";
@@ -9,11 +8,12 @@ import type { BigCategoryFilterDto } from "@/types/product";
 interface CategoryFilterProps {
   selectedBigCategoryId: number | null;
   selectedCategoryId: number | null;
-  onBigCategorySelect: (
-    bigCategoryId: number | null,
-    bigCategoryName: string | null,
-  ) => void;
+  onBigCategorySelect: (bigCategoryId: number | null) => void;
   onCategorySelect: (categoryId: number | null) => void;
+  /** 대분류 탭 폰트 크기 오버라이드 (기본값: globals.css 기준) */
+  bigCategoryFontSize?: string;
+  /** 소분류 pill 폰트 크기 오버라이드 (기본값: globals.css 기준) */
+  pillFontSize?: string;
 }
 
 export function CategoryFilter({
@@ -21,6 +21,8 @@ export function CategoryFilter({
   selectedCategoryId,
   onBigCategorySelect,
   onCategorySelect,
+  bigCategoryFontSize,
+  pillFontSize,
 }: CategoryFilterProps) {
   const { data: filterMeta, isLoading } = useProductFilters();
   const bigCategories: BigCategoryFilterDto[] = filterMeta?.bigCategories ?? [];
@@ -30,7 +32,7 @@ export function CategoryFilter({
     if (bigCategories.length > 0 && selectedBigCategoryId === null) {
       const firstBig = bigCategories[0];
       const firstCat = firstBig.categories[0] ?? null;
-      onBigCategorySelect(firstBig.bigCategoryId, firstBig.bigCategoryName);
+      onBigCategorySelect(firstBig.bigCategoryId);
       onCategorySelect(firstCat?.categoryId ?? null);
     }
   }, [bigCategories.length]);
@@ -46,9 +48,9 @@ export function CategoryFilter({
     isLoading || (bigCategories.length > 0 && !selectedBig);
 
   return (
-    <div className="bg-white">
-      {/* 대분류 탭 행 */}
-      <div className="flex min-h-[44px] overflow-x-auto border-b border-(--color-border) px-4 scrollbar-none">
+    <div className="bg-[#f7f7f5]">
+      {/* 대분류 탭 행 — 깔끔한 구분선 */}
+      <div className="flex min-h-[40px] overflow-x-auto border-b border-[#dad3c8] px-5 scrollbar-none">
         {isLoading
           ? // 로딩 중 — 실제 탭과 동일한 크기의 skeleton
             [80, 64, 72, 60].map((w, i) => (
@@ -66,36 +68,33 @@ export function CategoryFilter({
                   onClick={() => {
                     if (!isActive) {
                       const firstCat = big.categories[0] ?? null;
-                      onBigCategorySelect(
-                        big.bigCategoryId,
-                        big.bigCategoryName,
-                      );
+                      onBigCategorySelect(big.bigCategoryId);
                       onCategorySelect(firstCat?.categoryId ?? null);
                     }
                   }}
                   className="category-tab-button"
                   data-active={isActive}
+                  style={bigCategoryFontSize ? { fontSize: bigCategoryFontSize } : undefined}
                 >
-                  {big.bigCategoryName}
+                  {getCategoryDisplayName(big.bigCategoryName)}
                 </button>
               );
             })}
       </div>
 
-      {/* 소분류 pill 행 */}
-      <div className="flex flex-wrap gap-2 p-[10px_16px] bg-category-sub-bg border-b border-(--color-border) min-h-[52px]">
+      {/* 소분류 pill 행 — 밝은 배경 */}
+      <div className="flex flex-wrap gap-2 p-[10px_20px] min-h-[48px]">
         {showSubSkeleton
           ? // 로딩 중 — 실제 pill과 동일한 크기의 skeleton
             [56, 72, 48, 64, 52].map((w, i) => (
               <div
                 key={i}
-                className="h-[30px] rounded-full bg-gray-200 animate-pulse"
+                className="h-[25px] rounded-full bg-[#fff] animate-pulse"
                 style={{ width: w }}
               />
             ))
           : selectedBig?.categories.map((cat) => {
               const isActive = selectedCategoryId === cat.categoryId;
-              const catColor = CATEGORY_COLORS[cat.categoryName];
               return (
                 <button
                   key={cat.categoryId}
@@ -104,16 +103,7 @@ export function CategoryFilter({
                   }}
                   className="category-pill-button"
                   data-active={isActive}
-                  data-has-color={!!catColor}
-                  style={
-                    !isActive && catColor
-                      ? ({
-                          "--pill-bg": catColor.chip,
-                          "--pill-color": catColor.accent,
-                          "--pill-border": catColor.border,
-                        } as React.CSSProperties)
-                      : undefined
-                  }
+                  style={pillFontSize ? { fontSize: pillFontSize } : undefined}
                 >
                   {getCategoryDisplayName(cat.categoryName)}
                 </button>

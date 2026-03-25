@@ -9,6 +9,74 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ───────────────────────────────────────────────────────────────
+   🔤 폰트 unicode-range 보정
+   next/font/local의 variable 방식은 unicode-range를 지원하지 않음.
+   → 동일한 font-family명으로 @font-face를 재선언해서 덮어씀.
+   → SortsMillGoudy를 라틴 범위만 담당하도록 제한
+   → 한글은 SortsMillGoudy를 건너뛰고 MaruBuri로 바로 처리됨
+   ─────────────────────────────────────────────────────────────── */
+
+@font-face {
+  font-family: "SortsMillGoudy";
+  src: url("/fonts/SortsMillGoudy-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  /* Basic Latin + Latin-1 Supplement + Latin Extended-A 범위만 담당 */
+  unicode-range: U+0020-007F, U+00A0-00FF, U+0100-017F;
+}
+
+@font-face {
+  font-family: "SortsMillGoudy";
+  src: url("/fonts/SortsMillGoudy-Italic.ttf") format("truetype");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+  unicode-range: U+0020-007F, U+00A0-00FF, U+0100-017F;
+}
+
+@font-face {
+  font-family: "MaruBuri";
+  src: url("/fonts/MaruBuri-ExtraLight.ttf") format("truetype");
+  font-weight: 200;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "MaruBuri";
+  src: url("/fonts/MaruBuri-Light.ttf") format("truetype");
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "MaruBuri";
+  src: url("/fonts/MaruBuri-Regular.ttf") format("truetype");
+  /* 400~500 범위: font-medium(500) 요청 시 Regular가 처리 */
+  font-weight: 400 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "MaruBuri";
+  src: url("/fonts/MaruBuri-SemiBold.ttf") format("truetype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "MaruBuri";
+  src: url("/fonts/MaruBuri-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ───────────────────────────────────────────────────────────────
    🎨 디자인 토큰 (Figma ThemeContext 원본)
    ─────────────────────────────────────────────────────────────── */
 
@@ -30,13 +98,13 @@
   --color-warm-beige: #bfb6aa;
   --color-warm-amber: #c4b5a0;
 
-  /* ─── 배경 컬러: Beige Base (#F2EFE9) ─── */
-  --color-bg-base: #f2efe9;
-  --color-bg-surface: #ece8e2;
+  /* ─── 배경 컬러: White Base ─── */
+  --color-bg-base: #ffffff;
+  --color-bg-surface: #f8f7f5;
   --color-bg-card: #ffffff;
   --color-bg-beige: #f2efe9;
-  --color-bg-chip: #ece8e2;
-  --color-bg-muted-warm: #e8e3dd;
+  --color-bg-chip: #f5f3f0;
+  --color-bg-muted-warm: #edeae6;
   --color-bg-like: #fff0f0;
 
   /* ─── 텍스트 컬러: 농도별 계층 ─── */
@@ -55,23 +123,30 @@
   --color-border-warm: #d9d1c7;
   --color-border-dash: #d9d5d0;
   --color-border-subtle: #ddd9d3;
+  --color-border-modal: #edebe8; /* 모달 헤더/구분선 */
+  --color-border-table: #e8e4df; /* 비교 테이블 외곽선 */
 
   /* ─── 시스템 컬러 ─── */
   --color-chip-base: #f2efe9;
   --color-danger: #ef4444;
 
+  /* ─── UI 컴포넌트 전용 ─── */
+  --color-handle-bar: #e0ddd8; /* 바텀시트 핸들 바 */
+  --color-table-label-bg: #fafaf8; /* 비교 테이블 라벨 열 배경 */
+  --color-highlight-strong: #5a5248; /* 비교 우위 강조 텍스트 */
+
   /* ─── 🏷️ CategoryFilter 컴포넌트 ─── */
-  --color-category-active-text: #6b5445;
-  --color-category-inactive-text: #a8a39d;
-  --color-category-active-pill: #9b7d6a;
-  --color-category-sub-bg: #f5f1eb;
-  --color-category-pill-default-bg: #f2efe9;
-  --color-category-pill-default-text: #8a8278;
-  --color-category-pill-default-border: #e2ddd8;
+  --color-category-active-text: #2a2118;
+  --color-category-inactive-text: #bfb6aa;
+  --color-category-active-pill: #a69d92;
+  --color-category-sub-bg: #f5f2ed;
+  --color-category-pill-default-bg: #faf8f5;
+  --color-category-pill-default-text: #a69d92;
+  --color-category-pill-default-border: #e8e4e0;
 
   /* ─── 🧭 BottomNav 컴포넌트 ─── */
-  --color-nav-bg: #fdfcfb;
-  --color-nav-active: #5a504a;
+  --color-nav-bg: #F4F5F0;
+  --color-nav-active: #b0977f;
   --color-nav-inactive: #c4beb7;
   --color-nav-home-active-bg: #5a504a;
   --color-nav-home-inactive-bg: #eae5df;
@@ -98,11 +173,11 @@
   --shadow-product-thumb: 0 2px 8px rgba(0, 0, 0, 0.08);
 
   /* ─── ⚠️ EWG 안전도 등급 ─── */
-  --color-ewg-safe: #6b9e6b;
+  --color-ewg-safe: #b1dda1;
   --color-ewg-safe-bg: #e8f5e9;
-  --color-ewg-caution: #d4a84b;
+  --color-ewg-caution: #ddd9a1;
   --color-ewg-caution-bg: #fff8e1;
-  --color-ewg-danger: #d94f3d;
+  --color-ewg-danger: #df8282;
   --color-ewg-danger-bg: #ffebee;
 
   /* ─── 📐 Border Radius ─── */
@@ -115,9 +190,9 @@
   --radius-xs: 4px;
 
   /* ─── 🌑 Shadows ─── */
-  --shadow-card: 0px 5px 16px 0px rgba(166, 157, 146, 0.15);
-  --shadow-nav: 0 8px 32px rgba(166, 157, 146, 0.08);
-  --shadow-xs: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.03);
+  --shadow-nav: 0 -1px 0 rgba(0, 0, 0, 0.04);
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
 
   /* ─── 📏 Heights ─── */
   --height-header: 56px;
@@ -200,20 +275,33 @@
 
   /* ─── HTML & Font Setup ─── */
   html {
-    /* 폰트: 영어(SortsMillGoudy) → 한글(MaruBuri) → 시스템 폰트 폴백 */
+    /*
+     * 폰트 우선순위:
+     *   1. MaruBuri       — 한글 + 라틴 폴백
+     *   2. SortsMillGoudy — 라틴 문자 전용 (unicode-range로 한글 제외됨)
+     *   3. 시스템 폰트 폴백
+     *
+     * next/font variable 방식은 unicode-range를 지원하지 않아
+     * 위의 @font-face 직접 선언으로 unicode-range를 보정함.
+     * var(--font-english), var(--font-korean)은 기존 페이지 코드 호환용으로 유지
+     */
     font-family:
-      var(--font-english),
+      "MaruBuri",
+      "SortsMillGoudy",
       var(--font-korean),
+      var(--font-english),
       -apple-system,
       BlinkMacSystemFont,
       system-ui,
       serif;
     font-size: 16px;
+    /* 브라우저가 임의로 폰트 굵기/기울임 합성하는 것을 방지 */
+    font-synthesis: none;
   }
 
   /* ─── Body Background ─── */
   body {
-    background-color: #f2efe9; /* Beige-1 */
+    background-color: #f9f8f6; /* 미세한 웜 화이트 */
     color: #2a2118;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -221,7 +309,7 @@
 
   @media (max-width: 767px) {
     body {
-      background-color: #f2efe9;
+      background-color: #f9f8f6;
     }
   }
 
@@ -239,11 +327,6 @@
   /* BottomNav 높이 보정 ((main)/layout.tsx에서 사용) */
   .pb-nav {
     padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
-  }
-
-  /* 피그마 기준 최소 폰트 크기 (13px) */
-  .text-xs {
-    font-size: 13px !important;
   }
 
   /* ─── 📝 Typography ─── */
@@ -283,36 +366,37 @@
   /* 대분류 탭 버튼 */
   .category-tab-button {
     flex-shrink: 0;
-    height: 44px;
+    height: 40px;
     padding: 0 14px;
-    font-size: 18px;
-    font-weight: 600;
-    letter-spacing: 0.01em;
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
     cursor: pointer;
     border: none;
     background: transparent;
     position: relative;
-    transition: color 0.15s;
+    transition: color 0.2s;
     color: var(--color-category-inactive-text);
     border-bottom: 2px solid transparent;
     margin-bottom: -1px;
   }
 
   .category-tab-button[data-active="true"] {
-    color: var(--color-category-active-text);
-    border-bottom-color: var(--color-category-active-text);
+    color: #806f5e;
+    font-weight: 700;
+    border-bottom-color: #9a8a79;
   }
 
   /* 소분류 pill 버튼 (기본 스타일) */
   .category-pill-button {
-    height: 30px;
+    height: 25px;
     padding: 0 12px;
-    border-radius: var(--radius-modal);
-    font-size: 16px;
+    border-radius: 9999px;
+    font-size: 13px;
     font-weight: 600;
     cursor: pointer;
     border: 1px solid;
-    transition: all 0.15s;
+    transition: all 0.2s;
     background-color: var(--color-category-pill-default-bg);
     color: var(--color-category-pill-default-text);
     border-color: var(--color-category-pill-default-border);
@@ -320,9 +404,8 @@
 
   /* 소분류 pill 버튼 (활성) */
   .category-pill-button[data-active="true"] {
-    background-color: var(--color-category-active-pill);
-    color: #ffffff;
-    border-color: var(--color-category-active-pill);
+    background-color: #e1e1de;
+    color: #777775;
   }
 
   /* 소분류 pill 버튼 (카테고리별 동적 색상) */
@@ -380,7 +463,7 @@
   }
 
   .bottom-nav-home-circle[data-active="true"] {
-    background-color: var(--color-nav-home-active-bg);
+    background-color: #b0977f;
     box-shadow: var(--shadow-nav-home-active);
   }
 
@@ -433,8 +516,8 @@
 
   /* 썸네일 */
   .product-list-thumb {
-    width: 80px;
-    height: 80px;
+    width: 60px;
+    height: 60px;
     border-radius: 12px;
     background-color: white;
     display: flex;
@@ -444,7 +527,7 @@
     flex-shrink: 0;
     box-shadow: var(--shadow-product-thumb);
     border: 1px solid var(--color-product-card-border-default);
-    font-size: 32px;
+    font-size: 28px;
   }
 
   .product-list-thumb[data-has-color="true"] {
@@ -574,13 +657,13 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 38px;
-    height: 38px;
-    border-radius: 6px;
-    border: 1px solid var(--color-border);
-    background-color: var(--color-bg-card);
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: 1px solid #eee;
+    background-color: #fff;
     cursor: pointer;
-    transition: opacity 0.15s;
+    transition: all 0.15s;
   }
 
   .pagination-nav-button[data-disabled="true"] {
@@ -600,28 +683,27 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 38px;
-    height: 38px;
-    border-radius: 6px;
-    border: 1px solid var(--color-border);
-    background-color: var(--color-bg-card);
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    background-color: transparent;
     color: var(--color-text-muted);
-    font-size: 22px;
+    font-size: 13px;
     font-weight: 400;
     cursor: pointer;
     transition: all 0.15s;
   }
 
   .pagination-page-button[data-active="true"] {
-    border-color: var(--color-text-primary);
-    background-color: var(--color-text-primary);
-    color: var(--color-bg-card);
-    font-weight: 700;
+    background-color: #a9a09a;
+    color: #fff;
+    font-weight: 600;
   }
 
   .pagination-page-button:not([data-active="true"]):hover {
-    border-color: var(--color-brand);
-    background-color: var(--color-brand-pale);
+    border-color: #e8e4e0;
+    background-color: #f5f3f0;
   }
 
   .pagination-page-button:active {

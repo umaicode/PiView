@@ -2,64 +2,78 @@
 
 import { useState } from "react";
 import { PAGE_SIZE } from "@/constants/pagination";
-import {
-  FilterModal,
-  FilterState,
-  FILTER_INITIAL_STATE,
-} from "@/components/common/FilterModal";
+import { FilterModal } from "@/components/common/FilterModal";
 import { CategoryFilter } from "@/components/common/CategoryFilter";
 import ProductCard from "@/components/common/ProductCard";
 import { Pagination } from "@/components/common/Pagination";
 import EmptyState from "@/components/common/EmptyState";
 import SearchBar from "@/components/common/SearchBar";
-import CompareModal, {
-  type CompareProduct,
-} from "@/components/common/CompareModal";
+import CompareModal from "@/components/common/CompareModal";
+import type { ProductViewModel } from "@/types/product/myCos";
 import { useCompare, useProductSearch } from "@/hooks";
 
 import { useAddMyCos, useRemoveMyCos, useMyCosQuery } from "@/hooks";
-import { useRoutineStore } from "@/stores";
-import { ROUTINE_STEPS } from "@/constants/routineSteps";
-import { SlidersHorizontal, Search, Scale } from "lucide-react";
+import { useSearchStore } from "@/stores/useSearchStore";
+import { SlidersHorizontal, Search } from "lucide-react";
 
 import { toSkinTypeParam } from "@/utils/enumConvert";
 import { PRICE_MAX } from "@/types/common";
 import type { SkinType } from "@/types/user";
 
 export default function SearchPage() {
-  const [selectedBigCategoryId, setSelectedBigCategoryId] = useState<
-    number | null
-  >(null);
-  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(
-    null,
-  );
-  const [searchQuery, setSearchQuery] = useState("");
-  const [page, setPage] = useState(1);
-  const [maxKnownPage, setMaxKnownPage] = useState(1);
+  const {
+    searchQuery,
+    selectedBigCategoryId,
+    selectedCategoryId,
+    filter,
+    page,
+    maxKnownPage,
+    setSearchQuery,
+    setSelectedBigCategoryId,
+    setSelectedCategoryId,
+    setFilter,
+    resetFilter,
+    setPage,
+  } = useSearchStore();
+
   const [showFilter, setShowFilter] = useState(false);
-  const [filter, setFilter] = useState<FilterState>(FILTER_INITIAL_STATE);
 
   // ── API 연동 ───────────────────────────────────────────────────
-  const { products, hasNext, totalCount, isLoading, isError } =
-    useProductSearch({
-      q: searchQuery.trim() || undefined,
-      bigCategoryId: selectedBigCategoryId ?? undefined,
-      categoryId: selectedCategoryId ?? undefined,
-      skinType: filter.filterSkin
-        ? toSkinTypeParam(filter.filterSkin as SkinType)
+  const {
+    products,
+    hasNext,
+    totalCount,
+    isLoading,
+    isFetching,
+    isPlaceholderData,
+    isError,
+  } = useProductSearch({
+    q: searchQuery.trim() || undefined,
+    bigCategoryId: selectedBigCategoryId ?? undefined,
+    categoryId: selectedCategoryId ?? undefined,
+    skinType: filter.filterSkin
+      ? toSkinTypeParam(filter.filterSkin as SkinType)
+      : undefined,
+    tagIds:
+      Object.keys(filter.tagIds).filter((k) => filter.tagIds[Number(k)])
+        .length > 0
+        ? Object.keys(filter.tagIds)
+            .filter((k) => filter.tagIds[Number(k)])
+            .map(Number)
         : undefined,
-      tagIds: Object.keys(filter.tagIds).filter((k) => filter.tagIds[Number(k)]).length > 0
-        ? Object.keys(filter.tagIds).filter((k) => filter.tagIds[Number(k)]).map(Number)
+    brandIds:
+      Object.keys(filter.brandIds).filter((k) => filter.brandIds[Number(k)])
+        .length > 0
+        ? Object.keys(filter.brandIds)
+            .filter((k) => filter.brandIds[Number(k)])
+            .map(Number)
         : undefined,
-      brandIds: Object.keys(filter.brandIds).filter((k) => filter.brandIds[Number(k)]).length > 0
-        ? Object.keys(filter.brandIds).filter((k) => filter.brandIds[Number(k)]).map(Number)
-        : undefined,
-      minPrice: filter.priceRange[0] > 0 ? filter.priceRange[0] : undefined,
-      maxPrice:
-        filter.priceRange[1] < PRICE_MAX ? filter.priceRange[1] : undefined,
-      page: page - 1,
-      size: PAGE_SIZE,
-    });
+    minPrice: filter.priceRange[0] > 0 ? filter.priceRange[0] : undefined,
+    maxPrice:
+      filter.priceRange[1] < PRICE_MAX ? filter.priceRange[1] : undefined,
+    page: page - 1,
+    size: PAGE_SIZE,
+  });
 
   // Slice 기반 페이지네이션
   const totalPages =
@@ -71,28 +85,20 @@ export default function SearchPage() {
 
   const handlePageChange = (p: number) => {
     setPage(p);
-    setMaxKnownPage((prev) => Math.max(prev, p));
     window.scrollTo(0, 0);
   };
-  const routineMap = useRoutineStore((state) => state.localRoutine);
-  const addStepProduct = useRoutineStore((state) => state.addStepProduct);
-  const isInRoutine = (productId: number) =>
-    Object.values(routineMap)
-      .flat()
-      .filter(Boolean)
-      .some((p) => p.id === String(productId));
 
   // 보유 상태 — API 연동
   const { data: myCosData = [] } = useMyCosQuery();
   const { mutate: addMyCos } = useAddMyCos();
   const { mutate: removeMyCos } = useRemoveMyCos();
   const isOwned = (id: number) =>
-    myCosData.some((item) => (item.productId ?? item.id) === id);
+    myCosData.some((item) => item.productInfo.productId === id);
   const handleToggleOwned = (productId: number) => {
     const owned = myCosData.find(
-      (item) => (item.productId ?? item.id) === productId,
+      (item) => item.productInfo.productId === productId,
     );
-    if (owned) removeMyCos(owned.id);
+    if (owned) removeMyCos(owned.myCosId);
     else addMyCos(productId);
   };
 
@@ -104,7 +110,7 @@ export default function SearchPage() {
     openCompare,
     closeCompare,
     canCompare,
-  } = useCompare<CompareProduct>();
+  } = useCompare<ProductViewModel>();
 
   const filterCount =
     (filter.filterSkin ? 1 : 0) +
@@ -114,42 +120,15 @@ export default function SearchPage() {
 
   const handleSearchChange = (value: string) => {
     setSearchQuery(value);
-    setPage(1);
-    setMaxKnownPage(1);
   };
   const handleBigCategorySelect = (bigCategoryId: number | null) => {
     setSelectedBigCategoryId(bigCategoryId);
-    setSelectedCategoryId(null);
-    setPage(1);
-    setMaxKnownPage(1);
   };
   const handleCategorySelect = (categoryId: number | null) => {
     setSelectedCategoryId(categoryId);
-    setPage(1);
-    setMaxKnownPage(1);
   };
 
-  const handleAddRoutine = (productId: number) => {
-    if (isInRoutine(productId)) return;
-    const product = products.find((p) => p.id === productId);
-    if (!product) return;
-    const matchedStep = ROUTINE_STEPS.find((step) =>
-      step.categories.includes(product.category),
-    );
-    addStepProduct(matchedStep?.code ?? "PR", {
-      id: String(product.id),
-      brand: product.brand,
-      name: product.name,
-      category: product.category,
-      emoji: "",
-      skinTypes: product.skinTypes,
-      effects: product.effects,
-      matchScore: 0,
-      imageUrl: product.imageUrl ?? undefined,
-    });
-  };
-
-  const handleToggleCompare = (product: CompareProduct) => {
+  const handleToggleCompare = (product: ProductViewModel) => {
     const isAlreadySelected = compareItems.some(
       (item) => item.id === product.id,
     );
@@ -158,36 +137,21 @@ export default function SearchPage() {
   };
 
   return (
-    <div className="flex-1" style={{ backgroundColor: "#F5F2EC" }}>
+    <div className="flex-1 bg-[#f9f8f6]">
       {showCompare && canCompare && (
         <CompareModal
-          compareItems={compareItems as [CompareProduct, CompareProduct]}
+          compareItems={compareItems as [ProductViewModel, ProductViewModel]}
           onClose={closeCompare}
         />
       )}
 
-      {/* 상단 헤더 */}
-      <div
-        style={{
-          backgroundColor: "#F5F2EC",
-          borderBottom: "1px solid #E2DDD8",
-          paddingTop: "5px",
-        }}
-      >
-        <div style={{ padding: "16px 16px 12px" }}>
-          <h1
-            style={{
-              margin: "3px 0 12px",
-              fontSize: "22px",
-              fontWeight: 700,
-              color: "#2A2118",
-              letterSpacing: "-0.4px",
-              lineHeight: 1.2,
-            }}
-          >
-            전체 제품
+      {/* 상단 헤더 — 미세한 웜 베이지 */}
+      <div className="bg-[#faf8f5] pt-[5px]">
+        <div className="px-5 pt-4 pb-3">
+          <h1 className="mt-[3px] mb-3.5 text-[20px] font-semibold text-[#635446] tracking-[-0.3px] leading-[1.2]">
+            All
           </h1>
-          <div className="flex items-center gap-5">
+          <div className="flex items-center gap-3">
             <div className="flex-1">
               <SearchBar
                 value={searchQuery}
@@ -195,36 +159,19 @@ export default function SearchPage() {
                 placeholder="제품명, 브랜드 검색..."
               />
             </div>
+            {/* 필터 버튼 — 미니멀 스타일 */}
             <button
               onClick={() => setShowFilter(true)}
-              className="flex items-center gap-1.5 cursor-pointer border transition-all active:scale-[0.96] shrink-0"
-              style={{
-                height: "38px",
-                padding: "0 12px",
-                borderRadius: "10px",
-                fontSize: "14px",
-                fontWeight: 600,
-                borderColor: filterCount > 0 ? "#A69D92" : "#E2DDD8",
-                backgroundColor: filterCount > 0 ? "#A69D92" : "#FFFFFF",
-                color: filterCount > 0 ? "#FFFFFF" : "#8A8278",
-              }}
+              className={`flex items-center gap-1.5 h-[38px] px-3.5 rounded-full text-[13px] font-medium border cursor-pointer transition-all active:scale-[0.96] shrink-0 ${
+                filterCount > 0
+                  ? "bg-[#5a504a] border-[#5a504a] text-white"
+                  : "bg-[#faf8f5] border-[#e8e4e0] text-[#8c8277]"
+              }`}
             >
               <SlidersHorizontal size={14} />
               필터
               {filterCount > 0 && (
-                <span
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    width: "16px",
-                    height: "16px",
-                    borderRadius: "50%",
-                    backgroundColor: "rgba(255,255,255,0.25)",
-                    fontSize: "10px",
-                    fontWeight: 700,
-                  }}
-                >
+                <span className="flex items-center justify-center w-[18px] h-[18px] rounded-full bg-white/20 text-[10px] font-semibold">
                   {filterCount}
                 </span>
               )}
@@ -240,72 +187,37 @@ export default function SearchPage() {
         onCategorySelect={handleCategorySelect}
       />
 
-      {/* 비교 힌트 바 */}
+      {/* 비교 힌트 바 — 1개 선택 시 */}
       {compareItems.length === 1 && (
-        <div
-          className="flex items-center justify-between mx-4 mt-3 px-3 py-2.5 rounded-xl"
-          style={{ backgroundColor: "#F2EFE9", border: "1px solid #D9D5D0" }}
-        >
-          <div className="flex items-center gap-2">
-            <Scale size={13} style={{ color: "#8A8278" }} />
-            <span
-              style={{ fontSize: "12px", color: "#6B6258", fontWeight: 600 }}
-            >
-              비교할 제품을 1개 더 선택하세요
-            </span>
-          </div>
+        <div className="flex items-center justify-between mx-5 px-4 py-2 rounded-xl bg-white border border-[#e8e4e0]">
+          <span className="text-[13px] font-medium text-[#6e6358]">
+            비교할 제품을 1개 더 선택하세요
+          </span>
           <button
             onClick={clearCompare}
-            style={{
-              fontSize: "11px",
-              color: "#A69D92",
-              border: "none",
-              background: "none",
-              cursor: "pointer",
-            }}
+            className="text-xs text-[#a69d92] bg-transparent border-none cursor-pointer"
           >
             취소
           </button>
         </div>
       )}
+
+      {/* 비교 힌트 바 — 2개 선택 완료 */}
       {canCompare && (
-        <div
-          className="flex items-center justify-between mx-4 mt-3 px-3 py-2.5 rounded-xl"
-          style={{ backgroundColor: "#3D3028" }}
-        >
-          <div className="flex items-center gap-2">
-            <Scale size={13} style={{ color: "#F2EFE9" }} />
-            <span
-              style={{ fontSize: "12px", color: "#F2EFE9", fontWeight: 600 }}
-            >
-              2개 제품 선택 완료
-            </span>
-          </div>
+        <div className="flex items-center justify-between mx-5 px-4 py-2 rounded-xl bg-[#e9c8b3]">
+          <span className="text-[13px] font-medium text-[#fff]">
+            2개 제품 선택 완료
+          </span>
           <div className="flex gap-2">
             <button
               onClick={clearCompare}
-              style={{
-                fontSize: "11px",
-                color: "#BFB6AA",
-                border: "none",
-                background: "none",
-                cursor: "pointer",
-              }}
+              className="text-[11px] text-white/90 bg-transparent border-none cursor-pointer"
             >
               취소
             </button>
             <button
               onClick={openCompare}
-              style={{
-                fontSize: "12px",
-                fontWeight: 700,
-                color: "#3D3028",
-                backgroundColor: "#F2EFE9",
-                border: "none",
-                borderRadius: "6px",
-                padding: "4px 10px",
-                cursor: "pointer",
-              }}
+              className="text-xs font-semibold text-[#716b67] bg-white border-none rounded-lg px-3 py-1.5 cursor-pointer"
             >
               비교하기
             </button>
@@ -314,30 +226,17 @@ export default function SearchPage() {
       )}
 
       {/* 제품 그리드 */}
-      <div style={{ padding: "16px 16px 24px" }}>
-        {isLoading ? (
-          <div
-            className="flex justify-center py-20"
-            style={{ color: "#A69D92", fontSize: "14px" }}
-          >
+      <div className="px-5 py-4">
+        {isLoading || (isFetching && isPlaceholderData) ? (
+          <div className="flex justify-center py-20 text-[13px] text-[#a69d92]">
             불러오는 중...
           </div>
         ) : isError ? (
-          <div
-            className="flex justify-center py-20"
-            style={{ color: "#A69D92", fontSize: "14px" }}
-          >
+          <div className="flex justify-center py-20 text-[13px] text-[#a69d92]">
             오류가 발생했어요. 다시 시도해 주세요.
           </div>
         ) : products.length === 0 ? (
-          <div
-            style={{
-              backgroundColor: "#FFFFFF",
-              borderRadius: "12px",
-              border: "1px solid #E2DDD8",
-              marginTop: "8px",
-            }}
-          >
+          <div className="mt-2 rounded-2xl border border-[#eee] bg-white">
             <EmptyState
               icon={Search}
               title="해당하는 제품이 없어요"
@@ -345,10 +244,11 @@ export default function SearchPage() {
             />
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-6 items-start">
-            {products.map((product) => (
+          <div className="grid grid-cols-2 gap-7 items-stretch">
+            {products.map((product, index) => (
               <ProductCard
                 key={product.id}
+                priority={index === 0}
                 id={product.id}
                 brand={product.brand}
                 name={product.name}
@@ -358,8 +258,6 @@ export default function SearchPage() {
                 effects={product.effects}
                 layout="grid"
                 showActions={true}
-                inRoutine={isInRoutine(product.id)}
-                onAddRoutine={() => handleAddRoutine(product.id)}
                 isOwned={isOwned(product.id)}
                 onToggleOwned={() => handleToggleOwned(product.id)}
                 isInCompare={compareItems.some(
@@ -370,7 +268,7 @@ export default function SearchPage() {
                     id: product.id,
                     name: product.name,
                     brand: product.brand,
-                    imageUrl: product.imageUrl ?? undefined,
+                    imageUrl: product.imageUrl ?? null,
                     skinTypes: product.skinTypes,
                     effects: product.effects,
                   })
@@ -392,16 +290,9 @@ export default function SearchPage() {
         onClose={() => setShowFilter(false)}
         state={filter}
         onChange={(next) => {
-          setFilter((prev) => ({ ...prev, ...next }));
-          setPage(1);
-          setMaxKnownPage(1);
+          setFilter(next);
         }}
-        onReset={() => {
-          setFilter(FILTER_INITIAL_STATE);
-          setPage(1);
-          setMaxKnownPage(1);
-        }}
-        resultCount={products.length}
+        onReset={resetFilter}
       />
     </div>
   );
