@@ -6,8 +6,10 @@ import { useUserStore } from "@/stores";
 import { useUserQuery, useMainRoutineQuery } from "@/hooks";
 import { ROUTINE_STEPS } from "@/constants/routineSteps";
 import { fromSkinTypeEnum } from "@/utils/enumConvert";
+import { filterEffectsByCategory } from "@/utils/productMapper";
 import ProductCard from "@/components/common/ProductCard";
 import DataSourcesSection from "@/components/features/home/DataSourcesSection";
+import ChatbotWidget from "@/components/common/ChatbotWidget";
 
 // 시간대별 인사말과 아이콘 반환
 function getGreeting(): { text: string; icon: React.ReactNode } {
@@ -57,10 +59,10 @@ export default function HomePage() {
             {greeting.text}
           </span>
         </div>
-        <h1 className="my-2 text-[18px] font-semibold text-[#6c6b66] tracking-[-0.5px] leading-[1.2]">
+        <h1 className="my-1 text-[18px] font-semibold text-[#63615e] tracking-[-0.5px] leading-[1.2]">
           {nickname}님,
         </h1>
-        <p className="mt-1 text-sm text-[#4e4b47]">
+        <p className="mt-1 text-sm text-[#64615e]">
           오늘의 스킨케어 루틴을 확인하세요
         </p>
       </div>
@@ -72,11 +74,11 @@ export default function HomePage() {
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <span className="flex items-center gap-1.5 text-[16px] font-bold text-[#52514d] uppercase [font-family:var(--font-english),serif]">
-                <ChessQueen size={16} className="text-[#52514d]" />
+                <ChessQueen size={16} className="text-[#52514d] mb-1" />
                 Main routine
               </span>
               {hasRoutine && (
-                <span className="text-[12px] font-medium py-0.5 px-2 rounded-full bg-[#f1f2f4] text-[#70685d]">
+                <span className="text-[13px] font-semibold py-0.5 px-2 mb-1 rounded-full bg-[#edeef0] text-[#70685d]">
                   {mainRoutineItems.length}단계
                 </span>
               )}
@@ -85,7 +87,7 @@ export default function HomePage() {
               <Link href="/mypage">
                 <span className="flex mr-5 items-center gap-1 text-[14px] text-[#A69D92]">
                   {mainRoutineData?.title && (
-                    <span className="text-[14px] font-semibold text-[#8a7f74] truncate max-w-28 mr-0.5">
+                    <span className="text-[14px] font-semibold text-[#6e6861] truncate max-w-28 mr-0.5">
                       {mainRoutineData.title}
                     </span>
                   )}
@@ -103,14 +105,14 @@ export default function HomePage() {
 
           {/* 루틴 리스트 */}
           {hasRoutine ? (
-            <div className="px-4 py-4 flex flex-col gap-0">
+            <div className="px-1 py-2 flex flex-col gap-0">
               {mainRoutineItems.map(({ step, product }, index) => (
                 <div
                   key={`${step.code}-${product.name}`}
-                  className="flex items-center py-2.5 first:pt-1 last:pb-1"
+                  className="flex items-center py-2.5"
                 >
                   {/* 스텝 번호 뱃지 */}
-                  <div className="shrink-0 w-6 h-6 rounded-full bg-[#f1f2f4] flex items-center justify-center">
+                  <div className="shrink-0 w-6 h-6 rounded-full bg-[#edeef0] flex items-center justify-center">
                     <span className="text-[16px] font-bold text-[#756f67] [font-family:var(--font-english),serif]">
                       {String(index + 1).padStart(2, "0")}
                     </span>
@@ -127,7 +129,7 @@ export default function HomePage() {
                       skinTypes={
                         product.skinTypes?.map(fromSkinTypeEnum) ?? []
                       }
-                      effects={product.tags ?? []}
+                      effects={filterEffectsByCategory(product.tags ?? [], product.categoryName ?? undefined)}
                       showLike={false}
                       showEwg={false}
                       imageContainerClassName="justify-center"
@@ -158,6 +160,8 @@ export default function HomePage() {
 
       {/* 참고 데이터소스 — 성분 분석 기반 사이트 */}
       <DataSourcesSection />
+
+      <ChatbotWidget context={{ screen: "search", currentProductId: null }} />
     </div>
   );
 }

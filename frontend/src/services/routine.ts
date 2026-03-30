@@ -10,11 +10,13 @@ import client from "./client";
 import type { ApiResponse } from "@/types/common";
 import type {
   DraftItemDto,
+  DraftUpdateResponse,
   RoutineListResponse,
   RoutineResponse,
   CreateRoutineRequest,
   EditRoutineLoadResponse,
   UpdateRoutineRequest,
+  RoutineAnalysisResponse,
 } from "@/types/routine";
 
 export const routineService = {
@@ -25,7 +27,7 @@ export const routineService = {
    * @param productId - 추가할 화장품 ID
    */
   addDraft: (columnId: number, productId: number) =>
-    client.post<ApiResponse<DraftItemDto[]>>("/routines/draft", { columnId, productId }),
+    client.post<ApiResponse<DraftUpdateResponse>>("/routines/draft", { columnId, productId }),
 
   /**
    * 임시 루틴(draft) 전체 동기화 (덮어쓰기)
@@ -126,4 +128,14 @@ export const routineService = {
    */
   updateRoutine: (routineId: number, request: UpdateRoutineRequest) =>
     client.put<ApiResponse<RoutineResponse>>(`/routines/${routineId}`, request),
+
+  /**
+   * 루틴 AI 분석
+   * POST /api/v1/routines/analysis
+   * 화면에 보이는 제품 ID 목록을 넘기면 AI가 분석
+   */
+  getRoutineAnalysis: (productIds: number[]): Promise<RoutineAnalysisResponse> =>
+    client
+      .post<ApiResponse<RoutineAnalysisResponse>>("/routines/analysis", { productIds })
+      .then((res) => res.data.data),
 };

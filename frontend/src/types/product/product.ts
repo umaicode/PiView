@@ -38,7 +38,7 @@ export interface ProductFilterMetaResponse {
 export interface ProductSearchParams {
   q?: string;
   bigCategoryId?: number;
-  categoryId?: number;
+  categoryId?: number | number[]; // 단일 또는 배열 — 루틴 추가 모달 남성 복합 탭 대응
   skinType?: string; // "dry" | "oily" | ... — enumConvert.ts로 변환 후 전송
   tagIds?: number[];
   brandIds?: number[];
@@ -53,6 +53,7 @@ export interface ProductSummaryResponse {
   productId: number;
   name: string | null;
   brandName: string | null;
+  categoryId?: number | null;
   categoryName: string | null;
   imageUrl: string | null;
   skinTypes: string[]; // ["dry", "oily"] — 영문 소문자
@@ -76,13 +77,13 @@ export interface ProductPageResponse {
 
 /** 추천 요청 DTO — 모든 필드 optional */
 export interface RecommendRequestDto {
-  skinType?: string;           // "dry" | "oily" | "combination" | "subuji"
-  gender?: string;             // "MEN" | "WOMEN"
-  concernId?: number;          // int64 — 피부 고민 ID
+  skinType?: string; // "dry" | "oily" | "combination" | "subuji"
+  gender?: string; // "MEN" | "WOMEN"
+  concernId?: number; // int64 — 피부 고민 ID
   targetRoutineColId?: number; // int64 — 루틴 컬럼 ID
 }
 
-/** 추천 응답 DTO — ProductSummaryResponse와 달리 tags 필드 없음 */
+/** 추천 응답 DTO */
 export interface RecommendResponseDto {
   productId: number;
   name: string;
@@ -90,9 +91,7 @@ export interface RecommendResponseDto {
   categoryName: string;
   imageUrl: string;
   price: number;
-  volume: string;
-  description: string;
   skinTypes: string[];  // ["dry", "oily"] — 영문 소문자
-  concernName: string;
   liked: boolean;
+  tags: string[];  // 피부기능태그 배열
 }

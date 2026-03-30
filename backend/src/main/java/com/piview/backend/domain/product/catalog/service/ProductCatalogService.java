@@ -16,6 +16,7 @@ import com.piview.backend.global.exception.CustomException;
 import com.piview.backend.global.exception.ErrorCode;
 import com.piview.backend.domain.product.like.repository.ProductLikeRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Slice;
 import org.springframework.stereotype.Service;
@@ -27,6 +28,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 
+@Slf4j
 @Service
 @Transactional(readOnly = true)
 @RequiredArgsConstructor
@@ -46,6 +48,9 @@ public class ProductCatalogService {
 
     // concern 가져오기 위한 service
     private final ProductConcernQueryService productConcernQueryService;
+
+    // 벡터 검색을 위한 service
+    private final ProductSearchAiClient productSearchAiClient;
 
     // filter MetaData 제공 service
     public ProductFilterMetaResponse getFilterMeta() {
@@ -125,35 +130,110 @@ public class ProductCatalogService {
                 .build();
 
         PageRequest pageable = PageRequest.of(normalized.getPage(), normalized.getSize());
-        Slice<Product> productSlice = productRepository.search(normalized, pageable);
 
-        // total pages
-        long totalCount = productRepository.count(normalized);
+        if (normalized.getQ() != null) {
+            int candidateLimit = resolveVectorCandidateLimit(normalized);
+            Integer effectiveBigCategoryId =
+                    (normalized.getCategoryId() != null && !normalized.getCategoryId().isEmpty())
+                            ? null
+                            : normalized.getBigCategoryId();
+            List<Long> rankedProductIds = productSearchAiClient.searchRankedProductIds(
+                    normalized.getQ(),
+                    candidateLimit,
+                    effectiveBigCategoryId,
+                    normalized.getCategoryId()
+            );
 
+            if (!rankedProductIds.isEmpty()) {
+                ProductSearchCondition filterOnlyCondition = ProductSearchCondition.builder()
+                        .q(null) // q는 AI에서 반영
+                        .bigCategoryId(normalized.getBigCategoryId())
+                        .categoryId(normalized.getCategoryId())
+                        .skinType(normalized.getSkinType())
+                        .concernIds(normalized.getConcernIds())
+                        .brandIds(normalized.getBrandIds())
+                        .minPrice(normalized.getMinPrice())
+                        .maxPrice(normalized.getMaxPrice())
+                        .page(normalized.getPage())
+                        .size(normalized.getSize())
+                        .build();
+
+                Slice<Product> vectorSlice = productRepository.searchByRankedProductIds(
+                        filterOnlyCondition, rankedProductIds, pageable
+                );
+                long vectorTotalCount = productRepository.countByRankedProductIds(
+                        filterOnlyCondition, rankedProductIds
+                );
+
+                if (!vectorSlice.isEmpty()) {
+                    log.info(
+                            "Product search used AI ranking: query='{}', candidateLimit={}, rankedCount={}, filteredCount={}, totalCount={}",
+                            normalized.getQ(),
+                            candidateLimit,
+                            rankedProductIds.size(),
+                            vectorSlice.getNumberOfElements(),
+                            vectorTotalCount
+                    );
+                    return buildPageResponse(vectorSlice, normalized, vectorTotalCount, userId);
+                }
+
+                log.info(
+                        "Product search AI ranking filtered out by backend filters: query='{}', candidateLimit={}, rankedCount={}",
+                        normalized.getQ(),
+                        candidateLimit,
+                        rankedProductIds.size()
+                );
+            }
+
+            log.info(
+                    "Product search fallback to DB after empty AI ranking: query='{}', candidateLimit={}",
+                    normalized.getQ(),
+                    candidateLimit
+            );
+        }
+
+        // 벡터 실패/빈 결과일 때 기존 DB 검색
+        Slice<Product> fallbackSlice = productRepository.search(normalized, pageable);
+        long fallBackTotalCount = productRepository.count(normalized);
+        return buildPageResponse(fallbackSlice, normalized, fallBackTotalCount, userId);
+    }
+
+    private int resolveVectorCandidateLimit(ProductSearchCondition condition) {
+        int pageWindow = Math.max(1, condition.getPage() + 1);
+        int dynamic = condition.getSize() * (pageWindow + 2) * 10;
+        return Math.min(Math.max(100, dynamic), 500);
+    }
+
+    private ProductPageResponse buildPageResponse(
+            Slice<Product> productSlice,
+            ProductSearchCondition condition,
+            long totalCount,
+            Long userId
+    ) {
         List<Long> likedProductIds = (userId != null)
-            ? productLikeRepository.findLikedProductIdsByUserId(userId)
-            : Collections.emptyList();
+                ? productLikeRepository.findLikedProductIdsByUserId(userId)
+                : Collections.emptyList();
 
-        // 상품  별 concerns 조회
         List<Long> productIds = productSlice.getContent().stream()
                 .map(Product::getProductId)
                 .toList();
 
-        Map<Long, List<String>> concernsByProductId = productConcernQueryService.buildConcernsByProductIds(productIds);
+        Map<Long, List<String>> concernsByProductId =
+                productConcernQueryService.buildConcernsByProductIds(productIds);
 
         List<ProductSummaryResponse> responses = productSlice.getContent().stream()
-            .map(product -> {
-                boolean isLiked = likedProductIds.contains(product.getProductId());
-                List<String> concerns =  concernsByProductId.getOrDefault(product.getProductId(), List.of());
-                return ProductSummaryResponse.from(product, isLiked, concerns);
-            })
-            .toList();
+                .map(product -> {
+                    boolean isLiked = likedProductIds.contains(product.getProductId());
+                    List<String> concerns = concernsByProductId.getOrDefault(product.getProductId(), List.of());
+                    return ProductSummaryResponse.from(product, isLiked, concerns);
+                })
+                .toList();
 
         return ProductPageResponse.builder()
                 .products(responses)
                 .hasNext(productSlice.hasNext())
-                .page(normalized.getPage())
-                .size(normalized.getSize())
+                .page(condition.getPage())
+                .size(condition.getSize())
                 .totalCount(totalCount)
                 .build();
     }

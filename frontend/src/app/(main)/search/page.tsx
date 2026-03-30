@@ -15,8 +15,10 @@ import { useCompare, useProductSearch } from "@/hooks";
 import { useAddMyCos, useRemoveMyCos, useMyCosQuery } from "@/hooks";
 import { useSearchStore } from "@/stores/useSearchStore";
 import { SlidersHorizontal, Search } from "lucide-react";
+import ChatbotWidget from "@/components/common/ChatbotWidget";
 
 import { toSkinTypeParam } from "@/utils/enumConvert";
+import { trackEvent } from "@/utils/trackEvent";
 import { PRICE_MAX } from "@/types/common";
 import type { SkinType } from "@/types/user";
 
@@ -36,6 +38,7 @@ export default function SearchPage() {
     setPage,
   } = useSearchStore();
 
+  const [inputValue, setInputValue] = useState(searchQuery);
   const [showFilter, setShowFilter] = useState(false);
 
   // ── API 연동 ───────────────────────────────────────────────────
@@ -118,9 +121,19 @@ export default function SearchPage() {
     (Object.values(filter.brandIds).some(Boolean) ? 1 : 0) +
     (filter.priceRange[0] > 0 || filter.priceRange[1] < PRICE_MAX ? 1 : 0);
 
+  // 입력 중 — 로컬만 업데이트 (X 버튼으로 지우면 즉시 초기화)
   const handleSearchChange = (value: string) => {
-    setSearchQuery(value);
+    setInputValue(value);
+    if (!value.trim()) setSearchQuery("");
   };
+
+  // Enter 확정 시 — store 반영 + trackEvent
+  const handleSearchConfirm = (value: string) => {
+    const trimmed = value.trim();
+    setSearchQuery(trimmed);
+    if (trimmed) trackEvent("SEARCH", null, trimmed);
+  };
+
   const handleBigCategorySelect = (bigCategoryId: number | null) => {
     setSelectedBigCategoryId(bigCategoryId);
   };
@@ -154,18 +167,19 @@ export default function SearchPage() {
           <div className="flex items-center gap-3">
             <div className="flex-1">
               <SearchBar
-                value={searchQuery}
+                value={inputValue}
                 onChange={handleSearchChange}
+                onSearch={handleSearchConfirm}
                 placeholder="제품명, 브랜드 검색..."
               />
             </div>
             {/* 필터 버튼 — 미니멀 스타일 */}
             <button
               onClick={() => setShowFilter(true)}
-              className={`flex items-center gap-1.5 h-[38px] px-3.5 rounded-full text-[13px] font-medium border cursor-pointer transition-all active:scale-[0.96] shrink-0 ${
+              className={`flex items-center gap-1.5 h-[38px] px-3.5 rounded-full text-[14px] font-semibold border cursor-pointer transition-all active:scale-[0.96] shrink-0 ${
                 filterCount > 0
                   ? "bg-[#5a504a] border-[#5a504a] text-white"
-                  : "bg-[#faf8f5] border-[#e8e4e0] text-[#8c8277]"
+                  : "bg-[#f1f1ef] text-[#74716f]"
               }`}
             >
               <SlidersHorizontal size={14} />
@@ -257,6 +271,7 @@ export default function SearchPage() {
                 skinTypes={product.skinTypes}
                 effects={product.effects}
                 layout="grid"
+                showCategory={false}
                 showActions={true}
                 isOwned={isOwned(product.id)}
                 onToggleOwned={() => handleToggleOwned(product.id)}
@@ -284,6 +299,7 @@ export default function SearchPage() {
         totalPages={totalPages}
         onChange={handlePageChange}
       />
+      <ChatbotWidget context={{ screen: "search", currentProductId: null }} />
 
       <FilterModal
         open={showFilter}

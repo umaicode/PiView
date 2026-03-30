@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, SwitchCamera, ImagePlus } from "lucide-react";
 import { useCaptureAnalysis, useAnalysisStatus } from "@/hooks";
@@ -27,19 +28,18 @@ const ICON_BTN_STYLE = {
   backdropFilter: "blur(8px)",
 };
 const TITLE_TEXT_STYLE = {
-  fontSize: "14px",
+  fontSize: "22px",
   fontWeight: 600,
   color: "#fff",
   textShadow: "0 1px 4px rgba(0,0,0,0.4)",
 };
-const SPACER_40 = { width: 40 };
 const HINT_BOX_STYLE = {
   borderRadius: "20px",
   backgroundColor: "rgba(0,0,0,0.45)",
   backdropFilter: "blur(12px)",
 };
 const HINT_TEXT_STYLE = {
-  fontSize: "13px",
+  fontSize: "18px",
   color: "#fff",
   fontWeight: 600,
   textAlign: "center" as const,
@@ -81,11 +81,6 @@ const SHUTTER_INNER_STYLE = {
   alignItems: "center",
   justifyContent: "center",
 };
-const HINT_BOTTOM_TEXT = {
-  fontSize: "13px",
-  color: "rgba(255,255,255,0.5)",
-  fontWeight: 600,
-};
 const UPLOAD_BTN_STYLE = {
   height: 44,
   borderRadius: "12px",
@@ -96,132 +91,6 @@ const UPLOAD_BTN_STYLE = {
   fontWeight: 600,
   border: "1px solid rgba(255,255,255,0.2)",
 };
-const RETRY_BTN_STYLE = {
-  height: 44,
-  borderRadius: "12px",
-  backgroundColor: "rgba(255,255,255,0.1)",
-  color: "rgba(255,255,255,0.55)",
-  fontSize: "13px",
-  fontWeight: 600,
-};
-
-/* ── 얼굴 가이드 SVG 오버레이 ── */
-function FaceOverlay({ scanning }: { scanning: boolean }) {
-  return (
-    <svg
-      viewBox="0 0 393 600"
-      fill="none"
-      className="absolute inset-0 w-full h-full pointer-events-none z-[5]"
-      preserveAspectRatio="xMidYMid meet"
-    >
-      {/* 얼굴 타원 */}
-      <ellipse
-        cx="196"
-        cy="270"
-        rx="120"
-        ry="168"
-        stroke="white"
-        strokeWidth="2"
-        strokeDasharray="8 6"
-        strokeOpacity="0.75"
-        fill="none"
-      >
-        {scanning && (
-          <animate
-            attributeName="stroke-dashoffset"
-            from="0"
-            to="28"
-            dur="1.5s"
-            repeatCount="indefinite"
-          />
-        )}
-      </ellipse>
-      {/* 왼눈 */}
-      <path
-        d="M135,250 Q160,228 185,250"
-        stroke="white"
-        strokeWidth="1.5"
-        strokeDasharray="5 4"
-        strokeOpacity="0.6"
-        fill="none"
-      />
-      {/* 오른눈 */}
-      <path
-        d="M210,250 Q235,228 260,250"
-        stroke="white"
-        strokeWidth="1.5"
-        strokeDasharray="5 4"
-        strokeOpacity="0.6"
-        fill="none"
-      />
-      {/* 왼쪽 눈 아래 */}
-      <path
-        d="M140,275 Q163,295 185,275"
-        stroke="white"
-        strokeWidth="1.5"
-        strokeDasharray="5 4"
-        strokeOpacity="0.5"
-        fill="none"
-      />
-      {/* 오른쪽 눈 아래 */}
-      <path
-        d="M210,275 Q233,295 255,275"
-        stroke="white"
-        strokeWidth="1.5"
-        strokeDasharray="5 4"
-        strokeOpacity="0.5"
-        fill="none"
-      />
-      {/* 코 */}
-      <path
-        d="M196,260 L196,310"
-        stroke="white"
-        strokeWidth="1"
-        strokeDasharray="4 3"
-        strokeOpacity="0.3"
-        fill="none"
-      />
-      {/* 입 */}
-      <path
-        d="M170,340 Q196,358 222,340"
-        stroke="white"
-        strokeWidth="1.5"
-        strokeDasharray="5 4"
-        strokeOpacity="0.4"
-        fill="none"
-      />
-    </svg>
-  );
-}
-
-/* ── 스캔 펄스 링 ── */
-function ScanPulse() {
-  return (
-    <div className="absolute inset-0 pointer-events-none overflow-hidden z-[4]">
-      {[0, 0.8, 1.6].map((delay, i) => (
-        <div
-          key={i}
-          className="absolute left-1/2 -translate-x-1/2"
-          style={{
-            top: "42%",
-            width: "280px",
-            height: "380px",
-            borderRadius: "50%",
-            border: "1.5px solid rgba(245,128,157,0.3)",
-            animation: `scanPulse 2.4s ${delay}s ease-out infinite`,
-          }}
-        />
-      ))}
-      <style>{`
-        @keyframes scanPulse {
-          0%   { transform: translateX(-50%) scale(0.85); opacity: 0.6; }
-          100% { transform: translateX(-50%) scale(1.2);  opacity: 0; }
-        }
-      `}</style>
-    </div>
-  );
-}
-
 export default function PhotoAnalysisPage() {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -235,7 +104,7 @@ export default function PhotoAnalysisPage() {
   const [preview, setPreview] = useState<string | null>(null);
   const [capturedFile, setCapturedFile] = useState<File | null>(null);
   const [facingMode, setFacingMode] = useState<"user" | "environment">("user");
-  const [scanning, setScanning] = useState(true);
+
   const [flash, setFlash] = useState(false);
 
   const { mutate: capture, isPending: isCapturing } = useCaptureAnalysis();
@@ -247,22 +116,62 @@ export default function PhotoAnalysisPage() {
 
   /* ── 카메라 시작 ── */
   const startCamera = useCallback(async (facing: "user" | "environment") => {
-    setCameraLoading(true);
+    // 기존 스트림 정리 (동기)
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
+
+    // setState는 await 이후에 호출해 useEffect 내 동기 setState 경고 방지
+    await Promise.resolve();
+    setCameraLoading(true);
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: facing,
-          width: { ideal: 1080 },
-          height: { ideal: 1920 },
-        },
-        audio: false,
-      });
+      let stream: MediaStream;
+      try {
+        // 4:3 비율 (세로 기준 3:4) 요청
+        stream = await navigator.mediaDevices.getUserMedia({
+          video:
+            facing === "user"
+              ? {
+                  facingMode: { exact: "user" },
+                  width: { ideal: 960 },
+                  height: { ideal: 1280 },
+                }
+              : {
+                  facingMode: { exact: "environment" },
+                  width: { ideal: 1080 },
+                  height: { ideal: 1440 },
+                },
+          audio: false,
+        });
+      } catch {
+        // exact 실패(일부 기기) → facingMode 문자열 폴백
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: facing },
+          audio: false,
+        });
+      }
+
       streamRef.current = stream;
-      // videoRef가 이미 있으면 바로 연결, 없으면 useEffect에서 연결
+
+      // 전면 카메라: zoom 최솟값 강제 — 브라우저 기본 줌인 보정
+      if (facing === "user") {
+        const track = stream.getVideoTracks()[0];
+        try {
+          const caps = track?.getCapabilities?.() as MediaTrackCapabilities & {
+            zoom?: { min: number; max: number };
+          };
+          if (caps?.zoom) {
+            await track.applyConstraints({
+              advanced: [{ zoom: caps.zoom.min } as MediaTrackConstraintSet],
+            });
+          }
+        } catch {
+          /* zoom 미지원 기기 무시 */
+        }
+      }
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         try {
@@ -288,11 +197,13 @@ export default function PhotoAnalysisPage() {
   });
 
   useEffect(() => {
-    startCamera(facingMode);
+    // 마운트 시 1회만 실행 — startCamera 내 setState는 await 이후 실행되므로 false positive
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void startCamera(facingMode);
     return () => {
       streamRef.current?.getTracks().forEach((t) => t.stop());
     };
-  }, []);
+  }, []); // intentional mount-only
 
   // 권한 허용 후 탭으로 돌아올 때 카메라 재시도
   useEffect(() => {
@@ -340,7 +251,6 @@ export default function PhotoAnalysisPage() {
       "image/jpeg",
       0.9,
     );
-    setScanning(false);
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     setCameraActive(false);
@@ -354,7 +264,6 @@ export default function PhotoAnalysisPage() {
     const reader = new FileReader();
     reader.onload = (ev) => {
       setPreview(ev.target?.result as string);
-      setScanning(false);
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
       setCameraActive(false);
@@ -366,7 +275,6 @@ export default function PhotoAnalysisPage() {
   const retake = () => {
     setPreview(null);
     setCapturedFile(null);
-    setScanning(true);
     startCamera(facingMode);
   };
 
@@ -405,7 +313,7 @@ export default function PhotoAnalysisPage() {
 
   return (
     <div
-      className="absolute inset-0 flex flex-col bg-black overflow-hidden"
+      className="absolute inset-0 bg-black overflow-hidden"
       style={CAMERA_Z_INDEX}
     >
       {/* 숨김 헬퍼 */}
@@ -418,77 +326,85 @@ export default function PhotoAnalysisPage() {
         onChange={handleFileChange}
       />
 
-      {/* ── 카메라 / 프리뷰 영역 ── */}
-      <div className="flex-1 relative overflow-hidden">
-        {/* 카메라 피드 */}
-        {!preview && !cameraError && (
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className="absolute inset-0 w-full h-full object-cover"
-            style={{ transform: facingMode === "user" ? "scaleX(-1)" : "none" }}
-          />
-        )}
+      {/* ── 카메라 / 프리뷰 영역 (전체화면) ── */}
+      <div className="absolute inset-0 flex items-center justify-center bg-black">
 
-        {/* 프리뷰 이미지 */}
-        {preview && (
-          <img
-            src={preview}
-            alt="Captured"
-            className="absolute inset-0 w-full h-full object-cover"
-          />
-        )}
-
-        {/* 카메라 오류: 뷰파인더 플레이스홀더 */}
-        {cameraError && !preview && (
-          <div className="absolute inset-0" style={DARK_BG_STYLE} />
-        )}
-
-        {/* 비네팅 */}
+        {/* 4:3 뷰파인더 컨테이너 (세로 기준 width:height = 3:4) */}
         <div
-          className="absolute inset-0 pointer-events-none z-[3]"
-          style={VIGNETTE_STYLE}
-        />
+          className="relative overflow-hidden w-full"
+          style={{ aspectRatio: "3/4" }}
+        >
+          {/* 카메라 피드 */}
+          {!preview && !cameraError && (
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="absolute inset-0 w-full h-full object-cover"
+              style={{ transform: facingMode === "user" ? "scaleX(-1)" : "none" }}
+            />
+          )}
 
-        {/* 얼굴 오버레이 */}
-        <FaceOverlay scanning={scanning && (cameraActive || cameraError)} />
+          {/* 프리뷰 이미지 (base64 data URL → unoptimized + fill) */}
+          {preview && (
+            <Image
+              src={preview}
+              alt="Captured"
+              fill
+              unoptimized
+              className="object-cover"
+            />
+          )}
 
-        {/* 스캔 펄스 */}
-        {scanning && !preview && <ScanPulse />}
+          {/* 카메라 오류: 뷰파인더 플레이스홀더 */}
+          {cameraError && !preview && (
+            <div className="absolute inset-0" style={DARK_BG_STYLE} />
+          )}
 
-        {/* 플래시 효과 */}
-        {flash && (
+          {/* 비네팅 */}
           <div
-            className="absolute inset-0 bg-white z-30 pointer-events-none"
-            style={{ animation: "flashFade 0.15s ease forwards" }}
+            className="absolute inset-0 pointer-events-none z-[3]"
+            style={VIGNETTE_STYLE}
           />
-        )}
 
-        {/* 상단 그라디언트 */}
-        <div
-          className="absolute top-0 left-0 right-0 h-28 pointer-events-none z-[6]"
-          style={TOP_GRAD_STYLE}
-        />
+          {/* 플래시 효과 */}
+          {flash && (
+            <div
+              className="absolute inset-0 bg-white z-30 pointer-events-none"
+              style={{ animation: "flashFade 0.15s ease forwards" }}
+            />
+          )}
 
-        {/* ── 상단 바 ── */}
+          {/* 상단 그라디언트 */}
+          <div
+            className="absolute top-0 left-0 right-0 h-28 pointer-events-none z-[6]"
+            style={TOP_GRAD_STYLE}
+          />
+
+          {/* 하단 그라디언트 */}
+          <div
+            className="absolute bottom-0 left-0 right-0 h-44 pointer-events-none z-[6]"
+            style={BOTTOM_GRAD_STYLE}
+          />
+        </div>
+
+        {/* ── 상단 바 (전체화면 기준 오버레이) ── */}
         <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-4 pt-4 pb-2 z-[10]">
           <button
-            onClick={() => router.push("/skin-test")}
+            onClick={() => router.back()}
             className="flex items-center justify-center border-none cursor-pointer"
             style={ICON_BTN_STYLE}
           >
             <ArrowLeft size={20} color="#fff" />
           </button>
-
           <span style={TITLE_TEXT_STYLE}>AI 피부 분석</span>
         </div>
 
         {/* ── 가이드 텍스트 ── */}
         {!preview && (
-          <div className="absolute top-[72px] left-0 right-0 flex justify-center z-[10]">
-            <div className="px-5 py-2.5" style={HINT_BOX_STYLE}>
+          <div className="absolute left-0 right-0 top-15 flex justify-center">
+            <div className="px-5 py-2.5 "  style={HINT_BOX_STYLE}>
               <p style={HINT_TEXT_STYLE}>
                 {cameraError
                   ? "사진을 업로드하거나 촬영 버튼을 눌러주세요"
@@ -506,16 +422,10 @@ export default function PhotoAnalysisPage() {
             </div>
           </div>
         )}
-
-        {/* 하단 그라디언트 */}
-        <div
-          className="absolute bottom-0 left-0 right-0 h-44 pointer-events-none z-[6]"
-          style={BOTTOM_GRAD_STYLE}
-        />
       </div>
 
-      {/* ── 하단 컨트롤 ── */}
-      <div className="shrink-0 relative z-[10]" style={BOTTOM_BAR_STYLE}>
+      {/* ── 하단 컨트롤 (카메라 위 오버레이) ── */}
+      <div className="absolute bottom-0 left-0 right-0 z-[10]" style={BOTTOM_BAR_STYLE}>
         {!preview ? (
           <div className="flex flex-col items-center pt-5 pb-3 gap-4">
             {/* 촬영 버튼 행 */}
@@ -535,24 +445,7 @@ export default function PhotoAnalysisPage() {
                 className="cursor-pointer border-none transition-all active:scale-90"
                 style={SHUTTER_OUTER_STYLE}
               >
-                <div style={SHUTTER_INNER_STYLE}>
-                  <svg width="28" height="28" viewBox="0 0 26 26" fill="none">
-                    <path
-                      d="M2 8V4C2 2.89543 2.89543 2 4 2H8M18 2H22C23.1046 2 24 2.89543 24 4V8M24 18V22C24 23.1046 23.1046 24 22 24H18M8 24H4C2.89543 24 2 23.1046 2 22V18"
-                      stroke="white"
-                      strokeWidth="2.2"
-                      strokeLinecap="round"
-                    />
-                    <circle cx="9.5" cy="10" r="1.2" fill="white" />
-                    <circle cx="16.5" cy="10" r="1.2" fill="white" />
-                    <path
-                      d="M9 16.5C9 16.5 10.5 18.5 13 18.5C15.5 18.5 17 16.5 17 16.5"
-                      stroke="white"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                </div>
+                <div style={SHUTTER_INNER_STYLE} />
               </button>
 
               {/* 카메라 전환 */}

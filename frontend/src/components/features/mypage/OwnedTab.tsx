@@ -69,15 +69,15 @@ export default function OwnedTab() {
       <section>
         <div className="mb-1">
           <div className="flex items-center justify-between">
-            <p className="text-base font-bold text-[#5e5c59]">Owned</p>
+            <p className="text-base font-bold text-[#5e5c59]">보유 제품</p>
             <button
               onClick={() => setOpenOwnedModal(true)}
-              className="text-[13px] px-3 py-1 rounded-full bg-brand/10 text-[#636264] font-semibold cursor-pointer border-none transition-colors hover:bg-brand/20"
+              className="text-[14px] px-3 py-1 rounded-full bg-brand/10 text-[#636264] font-semibold cursor-pointer border-none transition-colors hover:bg-brand/20"
             >
               + 추가
             </button>
           </div>
-          <p className="text-[13px] font-semibold text-[#787879] mt-0.5">
+          <p className="text-[14px] font-semibold text-[#787879] mt-0.5">
             {ownedProducts.length}개 보유 중
           </p>
         </div>
@@ -92,7 +92,7 @@ export default function OwnedTab() {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-3 gap-3 mt-5 [&_p.line-clamp-2]:text-[14px]!">
+            <div className="grid grid-cols-2 gap-5 mt-5 [&_p.line-clamp-2]:text-[12px]!">
               {pagedOwned.map((product) => (
                 <div key={product.id} className="relative">
                   <ProductCard
@@ -133,19 +133,20 @@ export default function OwnedTab() {
         <div className="mb-1">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
-              <p className="text-base font-bold text-[#db1c1c]">Avoid</p>
-              <Ban size={14} className="text-[#db1c1c]" />
+              <p className="text-base font-bold text-[#b84949]">제외 제품</p>
+              <Ban size={14} className="text-[#b45959]" />
             </div>
             <button
               onClick={() => setOpenAvoidModal(true)}
-              className="text-[13px] px-3 py-1 rounded-full bg-brand/10 text-[#636264] font-semibold cursor-pointer border-none transition-colors hover:bg-brand/20"
+              className="text-[14px] px-3 py-1 rounded-full bg-brand/10 text-[#636264] font-semibold cursor-pointer border-none transition-colors hover:bg-brand/20"
             >
               + 추가
             </button>
           </div>
-          <p className="text-[13px] font-semibold text-[#787879] mt-0.5">
+          <p className="text-[14px] font-semibold text-[#787879] mt-0.5">
             {dislikedItems.length}개 등록됨
-            <br />등록된 제품은 추천에서 제외됩니다
+            <br />
+            등록된 제품의 알러지를 포함한 제품은 추천에서 제외됩니다
           </p>
         </div>
 
@@ -162,11 +163,14 @@ export default function OwnedTab() {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-3 gap-3 mt-5 [&_p.line-clamp-2]:text-[14px]!">
+            <div className="grid grid-cols-2 gap-5 mt-5 [&_p.line-clamp-2]:text-[12px]!">
               {pagedAvoid.map((item) => (
                 <div key={item.dislikedProductId} className="relative">
                   <ProductCard
-                    id={item.dislikedProductId}
+                    id={item.productId}
+                    href={item.categoryName
+                      ? `/product/${item.productId}?category=${encodeURIComponent(item.categoryName)}`
+                      : `/product/${item.productId}`}
                     brand={item.brandName}
                     name={item.productName}
                     category={item.categoryName}

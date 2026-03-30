@@ -2,6 +2,7 @@ import time
 from threading import Lock
 
 from core.settings import get_settings
+from services.chatbot.retrieval.constants import CATEGORY_HINTS
 from services.chatbot.search.keyword.models import KeywordCandidateRow
 from services.chatbot.search.product_data import product_search_data_repository
 
@@ -15,18 +16,35 @@ class ProductKeywordRepository:
         self,
         terms: list[str],
         candidate_limit: int | None = None,
+        preferred_categories: set[str] | None = None,
+        category_ids: tuple[int, ...] | None = None,
+        big_category_id: int | None = None,
     ) -> list[KeywordCandidateRow]:
         normalized_terms = self._normalize_terms(terms)
         if not normalized_terms:
             return []
         normalized_limit = self._normalize_candidate_limit(candidate_limit)
-        cache_key = (normalized_terms, normalized_limit)
+        normalized_categories = self._normalize_categories(preferred_categories)
+        normalized_category_ids = self._normalize_category_ids(category_ids)
+        cache_key = (
+            normalized_terms,
+            normalized_limit,
+            normalized_categories,
+            normalized_category_ids,
+            big_category_id,
+        )
 
         cached_rows = self._get_cached(cache_key)
         if cached_rows is not None:
             return cached_rows
 
-        rows = self._fetch_candidates(normalized_terms, normalized_limit)
+        rows = self._fetch_candidates(
+            normalized_terms,
+            normalized_limit,
+            normalized_categories,
+            normalized_category_ids,
+            big_category_id,
+        )
         self._set_cached(cache_key, rows)
         return rows
 
@@ -34,10 +52,18 @@ class ProductKeywordRepository:
         self,
         terms: tuple[str, ...],
         candidate_limit: int,
+        preferred_categories: tuple[str, ...],
+        category_ids: tuple[int, ...],
+        big_category_id: int | None,
     ) -> list[KeywordCandidateRow]:
         product_rows = product_search_data_repository.search_products_by_terms(
             terms=terms,
             limit=candidate_limit,
+            preferred_category_aliases=preferred_categories,
+            category_ids=category_ids,
+            big_category_id=big_category_id,
+            include_ingredient_text_in_prefilter=False,
+            trace_label="keyword",
         )
 
         return [
@@ -59,7 +85,7 @@ class ProductKeywordRepository:
 
     def _get_cached(
         self,
-        cache_key: tuple[tuple[str, ...], int],
+        cache_key: tuple[tuple[str, ...], int, tuple[str, ...], tuple[int, ...], int | None],
     ) -> list[KeywordCandidateRow] | None:
         settings = get_settings()
         ttl_sec = max(10, settings.chatbot_keyword_cache_ttl_sec)
@@ -78,7 +104,7 @@ class ProductKeywordRepository:
 
     def _set_cached(
         self,
-        cache_key: tuple[tuple[str, ...], int],
+        cache_key: tuple[tuple[str, ...], int, tuple[str, ...], tuple[int, ...], int | None],
         rows: list[KeywordCandidateRow],
     ) -> None:
         settings = get_settings()
@@ -110,6 +136,27 @@ class ProductKeywordRepository:
         if candidate_limit is None:
             return fallback_limit
         return max(10, candidate_limit, fallback_limit)
+
+    def _normalize_categories(self, preferred_categories: set[str] | None) -> tuple[str, ...]:
+        if not preferred_categories:
+            return ()
+        aliases: list[str] = []
+        seen: set[str] = set()
+        for category_key in preferred_categories:
+            candidate_aliases = CATEGORY_HINTS.get(category_key, ()) or (category_key,)
+            for alias in candidate_aliases:
+                lowered = alias.strip().lower()
+                if not lowered or lowered in seen:
+                    continue
+                seen.add(lowered)
+                aliases.append(lowered)
+        return tuple(aliases)
+
+    def _normalize_category_ids(self, category_ids: tuple[int, ...] | None) -> tuple[int, ...]:
+        if not category_ids:
+            return ()
+        normalized = sorted({int(category_id) for category_id in category_ids if category_id is not None})
+        return tuple(normalized)
 
 
 product_keyword_repository = ProductKeywordRepository()

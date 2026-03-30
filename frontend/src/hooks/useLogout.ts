@@ -33,13 +33,13 @@ export function useLogout() {
       useUserStore.getState().clearUser();
       useSearchStore.getState().setSearchQuery("");
       useSearchStore.getState().resetFilter();
-      useRecommendStore.getState().setSearchQuery("");
-      useRecommendStore.getState().resetFilter();
+      useRecommendStore.getState().resetPage();
       useLikeStore.getState().initFromServer([]);
       useLikeStore.getState().setPage(1);
       useRoutineStore.getState().setSelectedRoutineId(null);
+      useRoutineStore.getState().resetEditMode();
 
-      router.push("/splash");
+      router.push("/welcome");
     }
   };
 

@@ -10,8 +10,8 @@
 import axios, { type InternalAxiosRequestConfig } from "axios";
 import { useUserStore } from "@/stores";
 import { useSearchStore } from "@/stores/useSearchStore";
-import { useRecommendStore } from "@/stores/useRecommendStore";
 import { useLikeStore } from "@/stores";
+import { useRecommendStore } from "@/stores/useRecommendStore";
 
 // _retry 플래그 타입 확장 (TypeScript 에러 방지)
 interface RetryableRequestConfig extends InternalAxiosRequestConfig {
@@ -49,8 +49,7 @@ function clearAllStores() {
   useUserStore.getState().clearUser();
   useSearchStore.getState().setSearchQuery("");
   useSearchStore.getState().resetFilter();
-  useRecommendStore.getState().setSearchQuery("");
-  useRecommendStore.getState().resetFilter();
+  useRecommendStore.getState().resetPage();
   useLikeStore.getState().initFromServer([]);
   useLikeStore.getState().setPage(1);
 }
@@ -80,14 +79,17 @@ client.interceptors.response.use(
     // refresh 요청 자체가 401/403이면 무한루프 방지 — 바로 로그아웃
     if (originalRequest.url?.includes("/auth/refresh")) {
       clearAllStores();
-      window.location.href = "/splash";
+      window.location.href = "/welcome";
       return Promise.reject(error);
     }
 
-    // _retry 플래그가 이미 있으면 refresh도 실패한 것 → 무한루프 방지
+    // _retry 플래그가 이미 있으면 재시도 후에도 실패한 것
+    // - 401: 토큰 재발급 후에도 인증 실패 → 세션 만료, 로그아웃
+    // - 403: 비즈니스 로직 권한 오류(토큰과 무관) → 로그아웃 없이 에러 전달
     if (originalRequest._retry) {
+      if (status === 403) return Promise.reject(error);
       clearAllStores();
-      window.location.href = "/splash";
+      window.location.href = "/welcome";
       return Promise.reject(error);
     }
 
@@ -113,7 +115,7 @@ client.interceptors.response.use(
     } catch {
       // refresh도 실패 → 세션 만료, 로그아웃 처리
       clearAllStores();
-      window.location.href = "/splash";
+      window.location.href = "/welcome";
       return Promise.reject(error);
     }
   },

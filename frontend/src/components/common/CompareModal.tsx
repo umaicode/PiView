@@ -10,12 +10,14 @@
  */
 
 import Image from "next/image";
-import { X } from "lucide-react";
+import { X, Loader2, MessageSquareText, Ban } from "lucide-react";
+import { motion, AnimatePresence, type Variants } from "framer-motion";
 import { formatPrice } from "@/utils/format";
 import { SkinTypeTag } from "@/components/common/ProductCard";
-import { useProductCompare } from "@/hooks";
+import { useProductCompare, useAiComparisonSummary } from "@/hooks";
 import { fromSkinTypeEnum } from "@/utils/enumConvert";
 import type { ProductViewModel } from "@/types/product/myCos";
+import { useUserStore } from "@/stores";
 
 type CompareProduct = ProductViewModel;
 export type { CompareProduct };
@@ -28,6 +30,30 @@ interface CompareModalProps {
 
 // globals.css에 정확히 매핑되는 변수 없어서 상수 유지
 const HIGHLIGHT_COLOR = "var(--color-highlight-strong)";
+
+// AI 카드 — 3D 입체감 + 아래서 위로 fade in
+const cardVariants: Variants = {
+  hidden: { opacity: 0, y: 30, scale: 0.95, rotateX: 6 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    rotateX: 0,
+    transition: { duration: 0.55, ease: [0.23, 1, 0.32, 1] },
+  },
+};
+
+// 컨텐츠 — stagger 부모
+const listVariants: Variants = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.15, delayChildren: 0.15 } },
+};
+
+// 각 줄 — fade + 살짝 위로 + scale
+const itemVariants: Variants = {
+  hidden: { opacity: 0, y: 12, scale: 0.97 },
+  visible: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.4, ease: [0.23, 1, 0.32, 1] } },
+};
 
 // ── 서브컴포넌트: 제품 헤더 ────────────────────────────────────────
 function ProductHeader({ product }: { product: CompareProduct }) {
@@ -48,7 +74,7 @@ function ProductHeader({ product }: { product: CompareProduct }) {
         )}
       </div>
       {product.brand && (
-        <p className="text-[13px] text-text-muted font-medium text-center leading-tight px-1 truncate w-full">
+        <p className="text-[13px] text-[#5d5c5b] font-medium text-center leading-tight px-1 truncate w-full">
           {product.brand}
         </p>
       )}
@@ -70,6 +96,18 @@ export default function CompareModal({
       : null;
 
   const { data: compareData, isLoading } = useProductCompare(productIds);
+
+  // 내 알러지 성분 이름 Set — O(1) 조회용
+  const myAllergyNames = new Set(
+    useUserStore((s) => s.avoidContents).map((a) => a.avoidContent),
+  );
+
+  // AI 비교 분석 — 모달 열릴 때 자동 호출
+  const {
+    data: aiComparison,
+    isLoading: isAiLoading,
+    isError: isAiError,
+  } = useAiComparisonSummary(productIds);
 
   const apiLeft = compareData?.products?.[0];
   const apiRight = compareData?.products?.[1];
@@ -133,7 +171,7 @@ export default function CompareModal({
             (apiLeft?.skinConcerns ?? leftProduct.effects).map((effect) => (
               <span
                 key={effect}
-                className="text-[10px] px-1.5 py-px rounded-[10px] border font-semibold bg-[#f5f2f1] text-[#726c67]"
+                className="text-[10px] px-1.5 py-px rounded-[10px] border font-semibold bg-[#f9f8f6] text-[#726c67]"
               >
                 {effect}
               </span>
@@ -149,7 +187,7 @@ export default function CompareModal({
             (apiRight?.skinConcerns ?? rightProduct.effects).map((effect) => (
               <span
                 key={effect}
-                className="text-[10px] px-1.5 py-px rounded-[10px] border font-semibold bg-[#f5f2f1] text-[#726c67]"
+                className="text-[10px] px-1.5 py-px rounded-[10px] border font-semibold bg-[#f9f8f6] text-[#726c67]"
               >
                 {effect}
               </span>
@@ -214,12 +252,19 @@ export default function CompareModal({
           <span className="text-[13px] text-text-hint">없음</span>
         ) : (
           <div className="flex flex-col items-center gap-1">
-            <span className="text-[13px] font-semibold text-[#dc6262]">
+            <span className="text-[13px] font-semibold text-[#df322c]">
               {apiLeft.allergy.count}개
             </span>
-            <span className="text-[13px] text-text-muted text-center font-semibold">
-              {apiLeft.allergy.ingredients.join(", ")}
-            </span>
+            <div className="flex flex-wrap justify-center gap-x-0 gap-y-0">
+              {apiLeft.allergy.ingredients.map((ingredient, idx) => (
+                <span key={ingredient} className="flex items-center gap-0.5 text-[13px] text-[#df322c] font-semibold">
+                  {myAllergyNames.has(ingredient) && (
+                    <Ban size={11} className="text-[#df322c] shrink-0" />
+                  )}
+                  {ingredient}{idx < apiLeft.allergy.ingredients.length - 1 ? ", " : ""}
+                </span>
+              ))}
+            </div>
           </div>
         )
       ) : (
@@ -230,12 +275,19 @@ export default function CompareModal({
           <span className="text-[13px] text-text-hint">없음</span>
         ) : (
           <div className="flex flex-col items-center gap-1">
-            <span className="text-[13px] font-semibold text-[#dc6262]">
+            <span className="text-[13px] font-semibold text-[#df322c]">
               {apiRight.allergy.count}개
             </span>
-            <span className="text-[13px] text-text-muted text-center font-semibold">
-              {apiRight.allergy.ingredients.join(", ")}
-            </span>
+            <div className="flex flex-wrap justify-center gap-x-0 gap-y-0">
+              {apiRight.allergy.ingredients.map((ingredient, idx) => (
+                <span key={ingredient} className="flex items-center gap-0.5 text-[13px] text-[#df322c] font-semibold">
+                  {myAllergyNames.has(ingredient) && (
+                    <Ban size={11} className="text-[#df322c] shrink-0" />
+                  )}
+                  {ingredient}{idx < apiRight.allergy.ingredients.length - 1 ? ", " : ""}
+                </span>
+              ))}
+            </div>
           </div>
         )
       ) : (
@@ -252,7 +304,7 @@ export default function CompareModal({
 
   return (
     <div
-      className="fixed inset-0 z-60 flex flex-col justify-end items-center"
+      className="fixed inset-0 z-[80] flex flex-col justify-end items-center"
       style={{
         backgroundColor: "rgba(0,0,0,0.45)",
         backdropFilter: "blur(4px)",
@@ -288,7 +340,7 @@ export default function CompareModal({
             <div />
             <div className="flex flex-col items-center">
               {isRoutineCompare && (
-                <span className="text-[14px] font-semibold px-2 py-0.5 rounded-full text-brand">
+                <span className="text-[14px] font-semibold px-2 py-0.5 rounded-full text-[#5d5c5b]">
                   내 제품
                 </span>
               )}
@@ -297,7 +349,7 @@ export default function CompareModal({
             <div className="bg-[var(--color-border-modal)] self-stretch" />
             <div className="flex flex-col items-center">
               {isRoutineCompare && (
-                <span className="text-[14px] font-semibold px-2 py-0.5 rounded-fullp text-brand">
+                <span className="text-[14px] font-semibold px-2 py-0.5 rounded-fullp text-[#5d5c5b]">
                   비교 제품
                 </span>
               )}
@@ -321,12 +373,12 @@ export default function CompareModal({
                   제품명
                 </div>
                 <div className="px-2 py-3 text-[12px] text-center flex items-center justify-center text-text-primary">
-                  <span className="text-[13px] font-medium text-[#535252] leading-tight line-clamp-2">
+                  <span className="text-[14px] font-semibold text-[#535252] leading-tight line-clamp-2">
                     {leftProduct.name}
                   </span>
                 </div>
                 <div className="px-2 py-3 text-[12px] text-center flex items-center justify-center text-text-primary">
-                  <span className="text-[13px] font-medium text-[#535252] leading-tight line-clamp-2">
+                  <span className="text-[14px] font-semibold text-[#535252] leading-tight line-clamp-2">
                     {rightProduct.name}
                   </span>
                 </div>
@@ -369,26 +421,56 @@ export default function CompareModal({
             </div>
           )}
 
-          {/* AI 비교 분석 — bg-brand-pale, border-border-warm 전역 변수 */}
-          <div className="rounded-xl bg-brand-pale border border-border-warm p-4 mt-4">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-[16px] font-semibold text-[#686666]">
-                AI 비교 분석
-              </span>
+          {/* AI 비교 분석 */}
+          <motion.div
+            variants={cardVariants}
+            initial="hidden"
+            animate="visible"
+            className="rounded-2xl p-5 mt-1 border border-[#dde6ef] bg-[#f8fafb]"
+            style={{
+              boxShadow:
+                "0 1px 0 rgba(255,255,255,0.9) inset, 0 4px 16px rgba(115, 142, 174, 0.14), 0 1px 4px rgba(115, 142, 174, 0.08)",
+            }}
+          >
+            {/* 헤더 */}
+            <div className="flex items-center gap-2 mb-4">
+              <div className="size-6 rounded-lg flex items-center justify-center bg-[#b8cbdb]">
+                <MessageSquareText size={12} className="text-white" />
+              </div>
+              <p className="text-[16px] font-bold text-[#3c5061]">AI 비교 분석</p>
             </div>
-            <p className="m-0 text-sm leading-relaxed text-text-hint">
-              <strong className="font-semibold text-text-primary">
-                {leftProduct.name}
-              </strong>
-              은 수분 공급과 진정에 강점이 있어 건조하거나 민감한 피부에
-              적합합니다. 반면{" "}
-              <strong className="font-semibold text-text-primary">
-                {rightProduct.name}
-              </strong>
-              은 피지 조절과 안티에이징 효과가 뛰어나 복합성·지성 피부에 더
-              효과적입니다.
-            </p>
-          </div>
+
+            {isAiLoading && (
+              <div className="flex items-center justify-center py-6 gap-2 text-text-muted">
+                <Loader2 size={18} className="animate-spin opacity-50" />
+                <p className="text-xs">AI가 두 제품을 비교 분석하고 있어요...</p>
+              </div>
+            )}
+
+            {isAiError && !isAiLoading && (
+              <p className="text-xs text-text-muted">
+                AI 비교 분석을 불러오지 못했어요.
+              </p>
+            )}
+
+            <AnimatePresence>
+              {aiComparison && !isAiLoading && (
+                <motion.div
+                  variants={listVariants}
+                  initial="hidden"
+                  animate="visible"
+                  className="flex flex-col gap-2.5"
+                >
+                  <motion.p
+                    variants={itemVariants}
+                    className="text-[14px] text-[#353b41] leading-[1.7]"
+                  >
+                    {aiComparison.comparisonText}
+                  </motion.p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
         </div>
       </div>
     </div>

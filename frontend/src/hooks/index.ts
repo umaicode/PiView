@@ -15,7 +15,7 @@ export {
 } from "./queries/useDislikedProducts";
 
 // TanStack Query / 스토어 래퍼 훅 (queries/ 폴더)
-export { useUserQuery } from "./queries/useUserQuery";
+export { useUserQuery, useDislikedIngredientsQuery } from "./queries/useUserQuery";
 export { useLike, useLikedProducts, useToggleLike } from "./queries/useLike";
 export {
   useMyCosQuery,
@@ -25,7 +25,9 @@ export {
 } from "./queries/useMyCos";
 export { useProductSearch } from "./queries/useProductSearch";
 export { useProductDetail } from "./queries/useProductDetail";
-export { useProductAiSummary } from "./queries/useProductAi";
+export { useProductAiSummary, useAiComparisonSummary } from "./queries/useProductAi";
+export { useDynamicRecommendations } from "./queries/useDynamicRecommendations";
+export { useChatbot } from "./queries/useChatbot";
 export { useProductFilters } from "./queries/useProductFilters";
 export { useProductCompare } from "./queries/useProductCompare";
 export { useSurveySubmit } from "./queries/useSurveySubmit";
@@ -41,6 +43,7 @@ export {
   useRoutineListQuery,
   useMainRoutineQuery,
   useRoutineDetailQuery,
+  useRoutineAnalysisMutation,
   useAddDraftItemMutation,
   useSyncDraftMutation,
   useClearDraftMutation,

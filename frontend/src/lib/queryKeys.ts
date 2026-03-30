@@ -39,6 +39,9 @@ export const queryKeys = {
   // 기피 제품 목록 — GET /api/v1/users/me/disliked/products
   dislikedProducts: ["dislikedProducts"] as const,
 
+  // 기피 성분 목록 — GET /api/v1/users/me/disliked/ingredients
+  dislikedIngredients: ["dislikedIngredients"] as const,
+
   // 필터 메타 — GET /products/filters (전역 캐시, 한 번만 호출)
   productFilters: ["productFilters"] as const,
 
@@ -49,6 +52,16 @@ export const queryKeys = {
   // 제품 AI 요약 — GET /products/{productId}/summary
   productAiSummary: (productId: number) =>
     ["productAiSummary", productId] as const,
+
+  // 비교 AI 분석 — GET /products/compare/ai-summary
+  productAiComparison: (productIds: [number, number]) =>
+    ["productAiComparison", ...productIds] as const,
+
+  // 동적 추천 — GET /dynamic/recommendations
+  dynamicRecommendations: (params: {
+    bigCategoryId?: number;
+    categoryId?: number | number[];
+  }) => ["dynamicRecommendations", params] as const,
 
   // 피부 분석 상태 — GET /skin/analysis/{analysisId}
   analysisStatus: (analysisId: string) =>

@@ -5,6 +5,20 @@
 """
 
 from services.chatbot.domain import QueryRequest
+from services.chatbot.context import (
+    build_slot_memory_lines,
+    build_slot_priority_lines,
+    extract_overwrite_focus_slots,
+    has_slot_update_signal,
+)
+from services.chatbot.input.preprocess import (
+    has_followup_signal,
+    is_replace_followup,
+    normalize_message_for_chatbot,
+)
+from services.chatbot.intent.models import IntentDecision
+from services.chatbot.intent.constants import ANCHOR_PRODUCT_HINTS
+from services.chatbot.retrieval.constants import CATEGORY_HINTS
 from services.chatbot.retrieval.parsers import canonicalize_avoid_term, extract_preferred_categories
 from services.chatbot.search.product_data import (
     build_ingredient_preview,
@@ -13,50 +27,20 @@ from services.chatbot.search.product_data import (
 )
 
 
-FOLLOW_UP_HINTS: tuple[str, ...] = (
-    "이거",
-    "그거",
-    "이 중",
-    "둘 중",
-    "뭐가 더",
-    "어떤 게 더",
-    "그럼",
-    "그러면",
-    "같은 조건",
-    "방금",
-    "아까",
-    "다른 거",
-    "말고",
-    "대신",
-    "더 순한",
-    "더 가벼운",
-    "더 촉촉한",
-)
-
-ANCHOR_PRODUCT_HINTS: tuple[str, ...] = (
-    "이거",
-    "그거",
-    "이 제품",
-    "그 제품",
-    "방금",
-    "아까",
-    "지금 본",
-    "비슷",
-    "유사",
-    "대신",
-    "보다",
-    "같은",
-)
-
-
 def collect_applied_filters(
     request: QueryRequest,
     session_context: dict[str, object] | None = None,
     used_session_memory: bool = False,
     used_anchor_products: bool = False,
+    intent_decision: IntentDecision | None = None,
 ) -> dict[str, object]:
     """응답에 다시 노출할 filter snapshot만 수집합니다."""
     applied_filters: dict[str, object] = {}
+    if intent_decision is not None:
+        applied_filters["intentType"] = intent_decision.intent_type
+        applied_filters["routeSource"] = intent_decision.route_source
+        applied_filters["lowConfidence"] = intent_decision.low_confidence
+        applied_filters["usedProductRetrieval"] = intent_decision.use_product_retrieval
     effective_screen = (
         request.client_context.screen
         if request.client_context and request.client_context.screen
@@ -103,28 +87,52 @@ def build_search_query(
     검색 recall과 개인화 신호를 보완합니다.
     """
     message = request.message.strip()
-    parts = [message]
-    has_explicit_category = bool(extract_preferred_categories(message))
+    normalized_message = normalize_message_for_chatbot(message)
+    overwrite_focus_slots = extract_overwrite_focus_slots(normalized_message or message)
+    parts = [normalized_message or message]
+    focus_category_source = (
+        ", ".join(overwrite_focus_slots.get("categories", []))
+        if overwrite_focus_slots.get("categories")
+        else normalized_message or message
+    )
+    has_explicit_category = bool(extract_preferred_categories(focus_category_source))
+    if has_explicit_category:
+        category_aliases = _resolve_preferred_category_aliases(focus_category_source)
+        if category_aliases:
+            parts.append(f"카테고리 조건: {', '.join(category_aliases)}")
     used_session_memory = False
     used_anchor_products = False
-    if not has_explicit_category and _should_use_session_memory(message, session_context):
+    if _should_use_session_memory(normalized_message or message, session_context):
+        priority_lines = build_slot_priority_lines(normalized_message or message)
+        if priority_lines:
+            parts.extend(priority_lines)
         recent_messages = [
             str(item).strip()
             for item in (session_context or {}).get("recentUserMessages", [])
             if str(item).strip()
         ]
         if recent_messages:
-            parts.append(f"직전 대화 주제: {recent_messages[-1]}")
+            parts.append(f"이전 추천 조건: {recent_messages[-1]}")
             used_session_memory = True
+        slot_memory_lines = build_slot_memory_lines(
+            (session_context or {}).get("recentSlots"),
+            message=normalized_message or message,
+            has_explicit_category=has_explicit_category,
+        )
+        if slot_memory_lines:
+            parts.extend(slot_memory_lines)
+            used_session_memory = True
+        if is_replace_followup(normalized_message) and (session_context or {}).get("recentProductIds"):
+            parts.append("직전 추천 상품과는 다른 후보를 우선해서 찾는다.")
 
-    anchor_context_lines = _build_anchor_product_context(message, request, session_context)
+    anchor_context_lines = _build_anchor_product_context(normalized_message or message, request, session_context)
     if anchor_context_lines:
         parts.extend(anchor_context_lines)
         used_anchor_products = True
 
     if request.user_context:
         personalization_lines = _build_user_context_query_parts(
-            message,
+            normalized_message or message,
             request,
             has_explicit_category=has_explicit_category,
         )
@@ -132,11 +140,23 @@ def build_search_query(
     return "\n".join(parts), used_session_memory, used_anchor_products
 
 
-def build_excluded_product_ids(request: QueryRequest) -> set[int]:
+def build_excluded_product_ids(
+    request: QueryRequest,
+    session_context: dict[str, object] | None = None,
+) -> set[int]:
     """사용자가 이미 갖고 있거나 싫다고 한 상품은 검색 후보에서 제외합니다."""
-    if not request.user_context:
-        return set()
-    return set(request.user_context.my_product_ids) | set(request.user_context.disliked_product_ids)
+    excluded_ids: set[int] = set()
+    if request.user_context:
+        excluded_ids.update(request.user_context.my_product_ids)
+        excluded_ids.update(request.user_context.disliked_product_ids)
+
+    if session_context and is_replace_followup(request.message):
+        for product_id in session_context.get("recentProductIds", []):
+            try:
+                excluded_ids.add(int(product_id))
+            except (TypeError, ValueError):
+                continue
+    return excluded_ids
 
 
 def _should_use_session_memory(
@@ -145,8 +165,7 @@ def _should_use_session_memory(
 ) -> bool:
     if not session_context or not session_context.get("recentUserMessages"):
         return False
-    collapsed_message = message.lower().replace(" ", "")
-    return any(hint.replace(" ", "") in collapsed_message for hint in FOLLOW_UP_HINTS)
+    return has_followup_signal(message) or has_slot_update_signal(message)
 
 
 def _ingredient_already_mentioned(ingredient: str, message: str) -> bool:
@@ -265,3 +284,16 @@ def _build_user_context_query_parts(
             parts.append(f"피부타입: {user_context.my_skin_type}")
 
     return parts
+
+
+def _resolve_preferred_category_aliases(message: str) -> list[str]:
+    aliases: list[str] = []
+    seen: set[str] = set()
+    for category_key in extract_preferred_categories(message):
+        for alias in CATEGORY_HINTS.get(category_key, ()):
+            normalized = alias.strip()
+            if not normalized or normalized.lower() in seen:
+                continue
+            seen.add(normalized.lower())
+            aliases.append(normalized)
+    return aliases

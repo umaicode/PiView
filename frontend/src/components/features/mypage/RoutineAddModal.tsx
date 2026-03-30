@@ -1,15 +1,27 @@
 "use client";
 
 import { useState } from "react";
-import { X, Search, Package, Loader2, Star } from "lucide-react";
+import { X, Search, Package, Loader2, MessageCircleMore } from "lucide-react";
 import ProductCard from "@/components/common/ProductCard";
+import CompareModal from "@/components/common/CompareModal";
 import { useMutation } from "@tanstack/react-query";
 import { getRoutineSteps } from "@/constants/routineSteps";
-import { useProductSearch, useProductFilters, useLike } from "@/hooks";
+import { Pagination } from "@/components/common/Pagination";
+import {
+  useProductSearch,
+  useProductFilters,
+  useLike,
+  useDislikedProductsQuery,
+} from "@/hooks";
 import { useCompare } from "@/hooks/useCompare";
-import { useUserStore, selectGender, selectSkinType } from "@/stores";
+import {
+  useUserStore,
+  selectGender,
+  selectSkinType,
+  useRoutineStore,
+} from "@/stores";
 import { getCategoryDisplayName } from "@/utils/format";
-import { toSkinTypeEnum } from "@/utils/enumConvert";
+import { toSkinTypeEnum, concernLabelToDb } from "@/utils/enumConvert";
 import { mapRecommendResponse } from "@/utils/productMapper";
 import type { MappedProduct } from "@/utils/productMapper";
 import { productService } from "@/services/product";
@@ -36,10 +48,12 @@ export default function RoutineAddModal({
   onAdd,
 }: RoutineAddModalProps) {
   const [searchQuery, setSearchQuery] = useState("");
+  const [inputValue, setInputValue] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(
     null,
   );
   const [currentPage, setCurrentPage] = useState(1);
+  const [maxKnownPage, setMaxKnownPage] = useState(1);
   const PAGE_SIZE = 7;
 
   // 피뷰추천 활성화 여부
@@ -56,7 +70,16 @@ export default function RoutineAddModal({
   // 좋아요 API 연동 — toggleLike만 사용 (likeList는 ProductCard 내부에서 처리)
   const { toggleLike } = useLike();
   // 비교하기 상태 관리
-  const { compareItems, toggleCompare } = useCompare<MappedProduct>();
+  const {
+    compareItems,
+    toggleCompare,
+    showCompare,
+    openCompare,
+    closeCompare,
+    canCompare,
+  } = useCompare<MappedProduct>();
+  // PICK 배지 추적 — 추천 제품 마킹용
+  const markAsRecommended = useRoutineStore((state) => state.markAsRecommended);
 
   // 성별에 따른 루틴 스텝 가져오기
   const currentGender = useUserStore(selectGender);
@@ -66,6 +89,10 @@ export default function RoutineAddModal({
   const userConcerns = useUserStore((state) => state.concerns);
   const routineSteps = getRoutineSteps(currentGender);
 
+  // 기피 제품 ID Set — onAddRoutine 숨김용
+  const { data: dislikedItems = [] } = useDislikedProductsQuery();
+  const dislikedProductIdSet = new Set(dislikedItems.map((d) => d.productId));
+
   // 현재 루틴 단계 정보
   const currentStep = routineSteps.find((step) => step.code === openStep);
   const currentLabel = currentStep?.label ?? "";
@@ -73,18 +100,35 @@ export default function RoutineAddModal({
   // 카테고리 필터 메타데이터 가져오기
   const availableCategories = currentStep?.categories ?? [];
 
-  // 탭 표시용 — 같은 name의 카테고리를 하나로 합침 (남성 스킨/토너 중복 방지)
+  // 카테고리 표시명 alias — 남성 카테고리를 일반 카테고리명으로 통합 표시
+  // key: 백엔드/routineSteps 원본 name, value: 탭에 표시할 이름
+  const CATEGORY_DISPLAY_ALIAS: Record<string, string> = {
+    "에센스/세럼": "에센스/앰플/세럼", // 남성 에센스 → 일반 에센스 탭으로 합침
+  };
+
+  // 탭 표시용 — displayName 기준으로 탭 합산
+  // backendNames: 이 탭에 매핑되는 백엔드 응답 키 목록 (라운드로빈 필터링에 사용)
   const uniqueCategoryTabs = availableCategories.reduce<
-    { name: string; categoryId: number; categoryIds: number[] }[]
+    {
+      name: string;
+      categoryId: number;
+      categoryIds: number[];
+      backendNames: string[];
+    }[]
   >((acc, cat) => {
-    const existing = acc.find((t) => t.name === cat.name);
+    const displayName = CATEGORY_DISPLAY_ALIAS[cat.name] ?? cat.name;
+    const existing = acc.find((t) => t.name === displayName);
     if (existing) {
       existing.categoryIds.push(cat.categoryId);
+      if (!existing.backendNames.includes(cat.name)) {
+        existing.backendNames.push(cat.name);
+      }
     } else {
       acc.push({
-        name: cat.name,
+        name: displayName,
         categoryId: cat.categoryId,
         categoryIds: [cat.categoryId],
+        backendNames: [cat.name],
       });
     }
     return acc;
@@ -116,11 +160,18 @@ export default function RoutineAddModal({
   const searchParams = {
     q: searchQuery || undefined,
     bigCategoryId: selectedCategory?.bigCategoryId ?? undefined,
-    categoryId: effectiveCategoryId ?? undefined,
-    size: 20,
+    // 선택된 탭의 모든 categoryId 배열로 전달 (남성 복합 탭 대응)
+    categoryId: selectedTab
+      ? selectedTab.categoryIds
+      : effectiveCategoryId
+        ? [effectiveCategoryId]
+        : undefined,
+    page: isRecommendMode ? 0 : currentPage - 1, // 서버 페이지네이션 (0-indexed)
+    size: PAGE_SIZE,
   };
 
-  const { products, isLoading } = useProductSearch(searchParams);
+  const { products, isLoading, totalCount, hasNext } =
+    useProductSearch(searchParams);
 
   // 피뷰추천 API 뮤테이션 — POST /recommendations/products
   const recommendationMutation = useMutation({
@@ -131,7 +182,11 @@ export default function RoutineAddModal({
       const concernId = userConcerns
         .map(
           (concern) =>
-            filterMeta?.tags?.find((tag) => tag.tag === concern)?.tagId,
+            // store.concerns = label값("속건조"), tag.tag = DB값("수분")
+            // → concernLabelToDb로 변환 후 비교
+            filterMeta?.tags?.find(
+              (tag) => tag.tag === concernLabelToDb(concern),
+            )?.tagId,
         )
         .find((id) => id !== undefined);
       return productService.getRecommendations({
@@ -169,53 +224,111 @@ export default function RoutineAddModal({
     }
   };
 
-  // 추천 모드 — 선택된 카테고리명으로 recommendedData 필터링
-  // 카테고리 미선택 or 해당 카테고리 데이터 없으면 전체 flat
+  // 추천 모드 — 선택된 탭의 backendNames에 해당하는 키들만 수집 후 라운드로빈
+  // 예) 에센스/앰플/세럼 탭(backendNames: [에센스/앰플/세럼, 에센스/세럼])
+  //     → 두 키의 데이터를 균등하게 뽑아 5개 구성
+  // 예) 클렌징폼 탭(backendNames: [클렌징폼])
+  //     → 해당 키 데이터만 5개 이내 표시
+  const RECOMMEND_LIMIT = 5;
   const recommendedProducts: MappedProduct[] = isRecommendMode
     ? (() => {
-        const tabName = selectedTab?.name;
-        if (!tabName)
-          return Object.values(recommendedData)
-            .flat()
-            .map(mapRecommendResponse);
-        const fromCategory = recommendedData[tabName];
-        // 매핑 안 되는 카테고리 선택 시 빈 배열 반환 — 전체 노출 방지
-        return (fromCategory ?? []).map(mapRecommendResponse);
+        // 선택된 탭의 백엔드 키 목록으로 소스 배열 수집
+        // backendNames가 없으면(tabName 못 찾은 경우) 전체 키 폴백
+        const tabBackendNames = selectedTab?.backendNames ?? [];
+        const sources =
+          tabBackendNames.length > 0
+            ? tabBackendNames
+                .map((name) => recommendedData[name])
+                .filter(
+                  (arr): arr is NonNullable<typeof arr> =>
+                    !!arr && arr.length > 0,
+                )
+            : Object.values(recommendedData);
+
+        if (sources.length === 0) return [];
+
+        // 라운드로빈 인터리브 — 각 소스에서 1개씩 번갈아 뽑아 RECOMMEND_LIMIT까지
+        const interleaved: (typeof sources)[0] = [];
+        const maxLen = Math.max(...sources.map((s) => s.length));
+        for (
+          let i = 0;
+          i < maxLen && interleaved.length < RECOMMEND_LIMIT;
+          i++
+        ) {
+          for (const source of sources) {
+            if (interleaved.length >= RECOMMEND_LIMIT) break;
+            if (source[i] !== undefined) interleaved.push(source[i]);
+          }
+        }
+        return interleaved.map(mapRecommendResponse);
       })()
     : [];
 
-  // 추천 모드면 추천 제품, 아니면 검색 결과 사용
+  // 추천 모드: 클라이언트 페이지네이션 / 일반 모드: 서버 페이지네이션 (검색 페이지와 동일 패턴)
   const displayProducts = isRecommendMode ? recommendedProducts : products;
-  const totalPages = Math.ceil(displayProducts.length / PAGE_SIZE);
-  const pagedProducts = displayProducts.slice(
-    (currentPage - 1) * PAGE_SIZE,
-    currentPage * PAGE_SIZE,
-  );
+  const totalPages = isRecommendMode
+    ? Math.ceil(recommendedProducts.length / PAGE_SIZE)
+    : totalCount !== null
+      ? Math.ceil(totalCount / PAGE_SIZE)
+      : hasNext
+        ? Math.max(maxKnownPage, currentPage) + 1
+        : Math.max(maxKnownPage, currentPage);
+  // 추천 모드만 클라이언트 slice — 일반 모드는 서버가 이미 PAGE_SIZE만큼 잘라서 줌
+  const pagedProducts = isRecommendMode
+    ? recommendedProducts.slice(
+        (currentPage - 1) * PAGE_SIZE,
+        currentPage * PAGE_SIZE,
+      )
+    : products;
 
-  // 검색어 또는 카테고리가 바뀌면 1페이지로 리셋
-  const handleSearchChange = (value: string) => {
-    setSearchQuery(value);
+  const handlePageChange = (p: number) => {
+    setCurrentPage(p);
+    setMaxKnownPage((prev) => Math.max(prev, p));
+  };
+
+  // Enter 확정 시에만 API 쿼리 반영
+  const handleSearchConfirm = () => {
+    setSearchQuery(inputValue);
     setCurrentPage(1);
+    setMaxKnownPage(1);
+  };
+  const handleSearchClear = () => {
+    setInputValue("");
+    setSearchQuery("");
+    setCurrentPage(1);
+    setMaxKnownPage(1);
   };
 
   const handleCategoryChange = (categoryId: number) => {
     setSelectedCategoryId(categoryId);
-    setCurrentPage(1); // 카테고리 변경 시 항상 1페이지로 (일반/추천 모드 공통)
+    setCurrentPage(1);
+    setMaxKnownPage(1);
   };
 
   return (
     <>
-      {/* 배경 오버레이 */}
+      {/* 비교 모달 — RoutineAddModal 위로 (z-[80]) */}
+      {showCompare && canCompare && (
+        <CompareModal
+          compareItems={compareItems as [MappedProduct, MappedProduct]}
+          onClose={closeCompare}
+        />
+      )}
+
+      {/* 배경 오버레이 — 비교모달 열려있으면 비교모달만 닫고, 아니면 루틴추가모달 닫기 */}
       <div
         className="fixed inset-0 z-[60] bg-[rgba(0,0,0,0.5)] backdrop-blur-[4px]"
-        onClick={onClose}
+        onClick={() => {
+          if (showCompare) closeCompare();
+          else onClose();
+        }}
       />
       <div className="fixed inset-0 z-[70] flex items-center justify-center pointer-events-none py-10 px-5">
         <div className="bg-white flex flex-col pointer-events-auto rounded-[20px] w-full max-w-[420px] max-h-full shadow-[0_8px_40px_rgba(0,0,0,0.18)] overflow-hidden">
           <div className="px-6 pb-6 overflow-y-auto flex-1 min-h-0">
             {/* 헤더 — 타이틀, 피뷰추천 버튼, 닫기 버튼 */}
             <div className="flex items-center justify-between mt-[15px]">
-              <h3 className="text-[16px] font-bold text-[#656563]">
+              <h3 className="text-[14px] font-semibold text-[#656563]">
                 {currentLabel}
               </h3>
               {/* 우측 버튼 그룹 */}
@@ -225,20 +338,16 @@ export default function RoutineAddModal({
                   onClick={handleRecommendationToggle}
                   disabled={recommendationMutation.isPending}
                   className={[
-                    "flex items-center gap-1 h-8 px-3 rounded-full cursor-pointer text-[14px] font-bold transition-all duration-200 disabled:cursor-not-allowed active:scale-[0.96] active:shadow-none",
+                    "flex items-center gap-1 h-8 px-3 rounded-full cursor-pointer text-[14px] font-semibold transition-all duration-200 disabled:cursor-not-allowed active:scale-[0.96] active:shadow-none",
                     isRecommendMode
-                      ? "bg-[#f3b8d3] text-[#fdfdfb] shadow-[0_3px_8px_rgba(166,157,146,0.95),inset_0_1px_0_rgba(255,255,255,0.18)]"
-                      : "bg-[#f0b8d2] text-[#fdfdfb] shadow-[0_3px_7px_rgba(200,160,180,0.7),inset_0_1px_0_rgba(255,255,255,0.8)] hover:shadow-[0_4px_10px_rgba(200,160,180,0.85)] hover:bg-[#f7d6e5]",
+                      ? "bg-[#f5a9cb] text-[#ffffff] shadow-[0_2px_5px_rgba(166,157,146,0.55),inset_0_1px_0_rgba(255,255,255,0.18)]"
+                      : "bg-[#eec4d8] text-[#fdfdfb] shadow-[0_2px_4px_rgba(200,160,180,0.4),inset_0_1px_0_rgba(255,255,255,0.8)] hover:shadow-[0_3px_6px_rgba(200,160,180,0.55)] hover:bg-[#f5a9cb]",
                   ].join(" ")}
                 >
                   {recommendationMutation.isPending ? (
                     <Loader2 size={13} className="animate-spin" />
                   ) : (
-                    <Star
-                      size={15}
-                      fill={isRecommendMode ? "#fee03d" : "none"}
-                      color={isRecommendMode ? "#f7ecaf" : "currentColor"}
-                    />
+                    <span className="text-[15px]">⭐</span>
                   )}
                   피뷰 추천
                 </button>
@@ -251,13 +360,18 @@ export default function RoutineAddModal({
                 </button>
               </div>
             </div>
-
-            {/* 추천 모드 활성 시 안내 배너 */}
             {isRecommendMode && (
-              <div className="flex items-center gap-1.5 mt-2 px-2 rounded-xl text-[14px] font-semibold bg-[#fff] text-[#555454]">
-                {recommendedProducts.length > 0
-                  ? `사용자 맞춤형 ${recommendedProducts.length}개 제품 추천`
-                  : "추천 결과가 없습니다"}
+              <div className="flex items-center gap-3 py-2 mt-3 mb-1 px-2 rounded-xl text-[13px] bg-[#f7f1f8] font-semibold text-[#625c63]">
+                {recommendedProducts.length > 0 ? (
+                  <>
+                    <MessageCircleMore size={14} className="shrink-0" />
+                    사용자 맞춤형 {recommendedProducts.length}개 제품 추천
+                    <br />
+                    (내제품에 등록된 알러지성분 제품 제외)
+                  </>
+                ) : (
+                  "추천 결과가 없습니다"
+                )}
               </div>
             )}
 
@@ -271,17 +385,21 @@ export default function RoutineAddModal({
                 />
                 <input
                   type="text"
-                  value={searchQuery}
-                  onChange={(event) => handleSearchChange(event.target.value)}
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.nativeEvent.isComposing)
+                      handleSearchConfirm();
+                  }}
                   placeholder="제품명 또는 브랜드 검색"
                   className={[
                     "w-full h-10 pl-9 rounded-xl border border-border-warm bg-[#FAF8F5] text-xs text-[#2A2A2A] outline-none",
-                    searchQuery ? "pr-9" : "pr-3",
+                    inputValue ? "pr-9" : "pr-3",
                   ].join(" ")}
                 />
-                {searchQuery && (
+                {inputValue && (
                   <button
-                    onClick={() => handleSearchChange("")}
+                    onClick={handleSearchClear}
                     className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center justify-center w-5 h-5 rounded-full bg-border-warm border-none cursor-pointer"
                   >
                     <X size={12} color="#888" />
@@ -331,7 +449,7 @@ export default function RoutineAddModal({
               </div>
             ) : (
               <>
-                <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-4">
                   {pagedProducts.map((product) => {
                     const isInCompare = compareItems.some(
                       (item) => item.id === product.id,
@@ -347,57 +465,43 @@ export default function RoutineAddModal({
                         category={product.category}
                         skinTypes={product.skinTypes}
                         effects={product.effects}
-                        variant="modal"
+                        variant="routine-modal"
+                        showCategory={false}
+                        imageContainerClassName="mt-6"
                         isRecommended={recommendedProductIdSet.has(product.id)}
                         inRoutine={draftProductIds.includes(product.id)}
-                        onAddRoutine={() => onAdd(product.id)}
+                        onAddRoutine={
+                          dislikedProductIdSet.has(product.id)
+                            ? undefined
+                            : () => {
+                                onAdd(product.id);
+                                // 추천 제품인 경우 store에 마킹 (localStorage 동기화)
+                                if (recommendedProductIdSet.has(product.id)) {
+                                  markAsRecommended(product.id);
+                                }
+                              }
+                        }
                         onToggleLike={() => toggleLike(product.id)}
                         isInCompare={isInCompare}
-                        onToggleCompare={() => toggleCompare(product)}
+                        onToggleCompare={() => {
+                          const alreadyIn = compareItems.some(
+                            (x) => x.id === product.id,
+                          );
+                          toggleCompare(product);
+                          if (!alreadyIn && compareItems.length === 1)
+                            openCompare();
+                        }}
                       />
                     );
                   })}
                 </div>
 
-                {/* 페이지네이션 */}
-                {totalPages > 1 && (
-                  <div className="flex items-center justify-center gap-1 mt-4 mb-1">
-                    <button
-                      onClick={() =>
-                        setCurrentPage((prev) => Math.max(prev - 1, 1))
-                      }
-                      disabled={currentPage === 1}
-                      className="w-7 h-7 rounded-full border border-border-warm bg-white text-xs text-text-muted disabled:opacity-30 cursor-pointer disabled:cursor-default"
-                    >
-                      ‹
-                    </button>
-                    {Array.from({ length: totalPages }, (_, i) => i + 1).map(
-                      (page) => (
-                        <button
-                          key={page}
-                          onClick={() => setCurrentPage(page)}
-                          className={[
-                            "w-7 h-7 rounded-full border text-xs font-semibold cursor-pointer transition-colors",
-                            currentPage === page
-                              ? "border-(--color-brand) bg-(--color-brand) text-white"
-                              : "border-border-warm bg-white text-text-muted",
-                          ].join(" ")}
-                        >
-                          {page}
-                        </button>
-                      ),
-                    )}
-                    <button
-                      onClick={() =>
-                        setCurrentPage((prev) => Math.min(prev + 1, totalPages))
-                      }
-                      disabled={currentPage === totalPages}
-                      className="w-7 h-7 rounded-full border border-border-warm bg-white text-xs text-text-muted disabled:opacity-30 cursor-pointer disabled:cursor-default"
-                    >
-                      ›
-                    </button>
-                  </div>
-                )}
+                {/* 페이지네이션 — 공통 컴포넌트 (검색 페이지와 동일) */}
+                <Pagination
+                  page={currentPage}
+                  totalPages={totalPages}
+                  onChange={handlePageChange}
+                />
               </>
             )}
           </div>

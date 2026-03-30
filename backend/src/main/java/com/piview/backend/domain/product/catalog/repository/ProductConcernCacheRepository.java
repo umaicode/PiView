@@ -25,6 +25,7 @@ public interface ProductConcernCacheRepository extends JpaRepository<ProductConc
         FROM ProductConcernCache pcc, SkinConcerns sc
         WHERE pcc.skinConcernId = sc.id
         AND pcc.productId IN :productIds
+        AND pcc.totalConcernScore >= 25
         ORDER BY pcc.productId ASC, pcc.totalConcernScore DESC, sc.id ASC 
     """)
     List<ConcernView> findConcernViewsByProductIds(@Param("productIds") List<Long> productIds);
@@ -33,6 +34,12 @@ public interface ProductConcernCacheRepository extends JpaRepository<ProductConc
         "FROM ProductConcernCache pcc " +
         "JOIN SkinConcerns sc ON pcc.skinConcernId = sc.id " +
         "WHERE pcc.productId = :productId " +
+        "AND pcc.totalConcernScore >= 25 " +
         "ORDER BY pcc.totalConcernScore DESC")
     List<String> findTopConcernNamesByProductId(@Param("productId") Long productId);
+
+    // 루틴 내 제품들이 커버하는 고민 ID 목록 — 존재 여부만 체크 (점수 무관)
+    @Query("SELECT DISTINCT pcc.skinConcernId FROM ProductConcernCache pcc " +
+        "WHERE pcc.productId IN :productIds")
+    List<Long> findCoveredConcernIdsByProductIds(@Param("productIds") List<Long> productIds);
 }

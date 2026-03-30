@@ -1,6 +1,8 @@
 /**
  * stores/useRecommendStore.ts
  * 추천 페이지 전역 상태 — 상세 페이지 이동 후 복귀 시 상태 유지
+ *
+ * 검색어, 카테고리 선택, 필터, 페이지네이션 관리
  */
 
 import { create } from "zustand";
@@ -19,13 +21,12 @@ interface RecommendStore {
   setSelectedBigCategoryId: (id: number | null) => void;
   setSelectedCategoryId: (id: number | null) => void;
   setFilter: (filter: FilterState) => void;
-  updateFilter: (partial: Partial<FilterState>) => void;
   resetFilter: () => void;
   setPage: (page: number) => void;
   resetPage: () => void;
 }
 
-export const useRecommendStore = create<RecommendStore>((set, get) => ({
+export const useRecommendStore = create<RecommendStore>((set) => ({
   searchQuery: "",
   selectedBigCategoryId: null,
   selectedCategoryId: null,
@@ -44,9 +45,6 @@ export const useRecommendStore = create<RecommendStore>((set, get) => ({
 
   setFilter: (filter) =>
     set({ filter, page: 1, maxKnownPage: 1 }),
-
-  updateFilter: (partial) =>
-    set({ filter: { ...get().filter, ...partial }, page: 1, maxKnownPage: 1 }),
 
   resetFilter: () =>
     set({ filter: FILTER_INITIAL_STATE, page: 1, maxKnownPage: 1 }),

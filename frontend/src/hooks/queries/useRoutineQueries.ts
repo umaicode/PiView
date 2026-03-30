@@ -28,6 +28,7 @@ import type {
   CreateRoutineRequest,
   EditRoutineLoadResponse,
   UpdateRoutineRequest,
+  RoutineAnalysisResponse,
 } from "@/types/routine";
 
 // ── 조회 훅 ───────────────────────────────────────────────────────
@@ -309,6 +310,18 @@ export function useLoadRoutineToDraftMutation() {
       // draft가 새로운 루틴 데이터로 교체되었으므로 캐시 무효화
       queryClient.invalidateQueries({ queryKey: queryKeys.routineDraft });
     },
+  });
+}
+
+/**
+ * 루틴 AI 분석
+ * POST /api/v1/routines/analysis
+ * 화면에 보이는 productIds를 넘겨서 수동 호출 — 버튼 클릭 시 mutate(productIds)
+ */
+export function useRoutineAnalysisMutation() {
+  return useMutation<RoutineAnalysisResponse, Error, number[]>({
+    mutationFn: (productIds: number[]) => routineService.getRoutineAnalysis(productIds),
+    retry: false,
   });
 }
 
