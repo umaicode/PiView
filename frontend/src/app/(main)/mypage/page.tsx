@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { Settings, Mars, Venus } from "lucide-react";
 import { toast } from "sonner";
@@ -48,9 +49,26 @@ export default function MyPage() {
   const { mutate: addDraftItem } = useAddDraftItemMutation();
 
   // ── 모달 상태 ────────────────────────────────────────────────────────
-  // 열린 스텝 코드 + columnId (RoutineTab → RoutineAddModal로 전달)
-  const [openStep, setOpenStep] = useState<string | null>(null);
-  const [openColumnId, setOpenColumnId] = useState<number>(0);
+  // 열린 스텝 코드 + columnId — 마운트 시 sessionStorage에서 복원 (제품 상세 → 뒤로가기)
+  const [openStep, setOpenStep] = useState<string | null>(() => {
+    try {
+      const saved = sessionStorage.getItem("routineModalStep");
+      if (!saved) return null;
+      return (JSON.parse(saved) as { step: string }).step ?? null;
+    } catch { return null; }
+  });
+  const [openColumnId, setOpenColumnId] = useState<number>(() => {
+    try {
+      const saved = sessionStorage.getItem("routineModalStep");
+      if (!saved) return 0;
+      return (JSON.parse(saved) as { columnId: number }).columnId ?? 0;
+    } catch { return 0; }
+  });
+
+  // 복원 후 즉시 삭제 — 재마운트 시 중복 복원 방지
+  useEffect(() => {
+    sessionStorage.removeItem("routineModalStep");
+  }, []);
 
   // 성분 충돌 상태 — Zustand store (페이지 이동에도 유지)
   const setConflict = useRoutineStore((s) => s.setConflict);
@@ -134,10 +152,11 @@ export default function MyPage() {
             }
           >
             {profileImageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
+              <Image
                 src={profileImageUrl}
                 alt="프로필 이미지"
+                width={72}
+                height={72}
                 className="w-full h-full object-cover"
               />
             ) : (
