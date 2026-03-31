@@ -1,2 +1,4 @@
 /ai/models/forehead_skin_type_best.pt filter=lfs diff=lfs merge=lfs -text
 /ai/models/left_cheek_skin_type_best.pt filter=lfs diff=lfs merge=lfs -text
+/exec/3_DB_덤프/chromaDB/full_18749_20260324_1918/chroma.sqlite3 filter=lfs diff=lfs merge=lfs -text
+/exec/3_DB_덤프/chromaDB/full_18749_20260324_1918/e2386520-ae9e-44aa-8f06-36d6b3556790/data_level0.bin filter=lfs diff=lfs merge=lfs -text
